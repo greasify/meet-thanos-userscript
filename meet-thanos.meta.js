@@ -7,6 +7,7 @@
 // @match       https://meet.google.com/*
 // @match       https://meet.jit.si/*
 // @match       https://telemost.yandex.ru/private-join/*
+// @exclude     https://meet.jit.si/v1/*
 // @run-at      document-start
 // @inject-into page
 // @grant       GM_setValue
