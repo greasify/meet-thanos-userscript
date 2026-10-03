@@ -63,7 +63,7 @@ export interface EffectHost {
   meltN: Float32Array | null
   n: number
   drawBg: () => void
-  fullMatte: () => HTMLCanvasElement
+  fullMatte: (sharp?: boolean) => HTMLCanvasElement
   matte: (alpha: HTMLCanvasElement) => HTMLCanvasElement
   spawn: (spec: SpawnSpec) => void
   thrFor: (name: string, make: (w: number, h: number) => Float32Array) => Float32Array
@@ -173,7 +173,7 @@ function dissolve(pl: EffectHost, cfg: DissolveCfg, frame: EffectFrame) {
       g[j + 2] = gc[2]
       g[j + 3] = gv * 255
     }
-    if (m > 0.6 && th >= lo && th < hi && Math.random() < cfg.spawn) {
+    if ((i & 1) === 0 && m > 0.6 && th >= lo && th < hi && Math.random() < cfg.spawn) {
       const j = i * 4
       const tint = cfg.color ? cfg.color() : [d[j] as number, d[j + 1] as number, d[j + 2] as number] as Rgb
       pl.spawn({
@@ -189,12 +189,11 @@ function dissolve(pl: EffectHost, cfg: DissolveCfg, frame: EffectFrame) {
   }
   pl.alphaCtx.putImageData(pl.alphaImg, 0, 0)
   pl.drawBg()
-  ctx.drawImage(pl.matte(pl.alphaC), 0, 0)
+  ctx.drawImage(pl.matte(pl.alphaC), 0, 0, W, H)
   if (!g) return
   pl.glowCtx.putImageData(pl.glowImg, 0, 0)
   ctx.save()
   ctx.globalCompositeOperation = 'lighter'
-  ctx.filter = 'blur(2px)'
   ctx.drawImage(pl.glowC, 0, 0, W, H)
   ctx.restore()
 }
@@ -339,7 +338,6 @@ const ghost: VanishEffect = {
     ctx.translate(box.cx, box.cy - 30 * e)
     ctx.scale(s, s)
     ctx.translate(-box.cx, -box.cy)
-    ctx.filter = `blur(${(e * 10).toFixed(1)}px)`
     ctx.globalAlpha = (1 - e) ** 1.4
     ctx.drawImage(layer, 0, 0, W, H)
     ctx.globalAlpha = 0.35 * Math.sin(Math.PI * Math.min(1, e * 1.2))
@@ -353,7 +351,7 @@ const melt: VanishEffect = {
   label: 'Melt',
   render: (pl, { e }) => {
     const { H, W, ctx, fx, fxCtx } = pl
-    const layer = pl.fullMatte()
+    const layer = pl.fullMatte(true)
     pl.drawBg()
     const strip = 6
     const cols = Math.ceil(W / strip)
@@ -464,8 +462,7 @@ const hedge: VanishEffect = {
       ctx.translate(box.cx, box.cy)
       ctx.scale(s, s)
       ctx.translate(-box.cx, -box.cy - box.h * 0.03 * back)
-      ctx.filter = `brightness(${(1 - 0.4 * back).toFixed(2)})`
-      ctx.drawImage(layer, 0, 0)
+      ctx.drawImage(layer, 0, 0, W, H)
       ctx.restore()
     }
 

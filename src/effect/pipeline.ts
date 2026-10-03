@@ -1,10 +1,13 @@
 import type { SnapState } from '../state'
 import type { EffectHost, ParticleKind, SpawnSpec } from './effects'
 import { ease, effects } from './effects'
+import { GlRenderer } from './gl/renderer'
 
-const WORK_W = 480
+const WORK_W = 320
+const FRAME_MS = 1000 / 30
+const MASK_MS = 120
 const DIFF_T = 70
-const MAX_PARTICLES = 4500
+const MAX_PARTICLES = 1200
 const BG_FRAMES = 14
 
 interface Plane {
@@ -156,11 +159,15 @@ export class Pipeline implements EffectHost {
   canvas: HTMLCanvasElement
   ctx: CanvasRenderingContext2D
   dead = false
+  bitmapOk = typeof createImageBitmap === 'function'
   fx: HTMLCanvasElement
+  framePx: Uint8ClampedArray | null = null
   fxCtx: CanvasRenderingContext2D
   glowC: HTMLCanvasElement
   glowCtx: CanvasRenderingContext2D
   glowImg: ImageData
+  grab: HTMLCanvasElement
+  grabCtx: CanvasRenderingContext2D
   hedgeL: EffectHost['hedgeL'] = null
   hedgeR: EffectHost['hedgeR'] = null
   labels: Int32Array
@@ -168,12 +175,23 @@ export class Pipeline implements EffectHost {
   layer: HTMLCanvasElement
   layerCtx: CanvasRenderingContext2D
   mask: Uint8Array
+  maskAt = 0
   maskAvg: Float32Array
+  maskBusy = false
   maskFrames = 0
+  maskGen = 0
   meltN: Float32Array | null = null
   n: number
+  nextFrameAt = 0
   parts: Particle[] = []
+  person: HTMLCanvasElement
+  personCtx: CanvasRenderingContext2D
+  perfFrames: number[] = []
+  perfGpu: number[] = []
+  perfMissed = 0
+  perfTrans = -1
   prevE: number | null = null
+  renderer: GlRenderer | null = null
   sh: SnapState
   small: HTMLCanvasElement
   smallCtx: CanvasRenderingContext2D
@@ -183,6 +201,7 @@ export class Pipeline implements EffectHost {
   tmp: Uint8Array
   transId = -1
   video: HTMLVideoElement
+  videoFrame: number | null = null
 
   constructor(video: HTMLVideoElement, shared: SnapState) {
     this.video = video
@@ -195,8 +214,18 @@ export class Pipeline implements EffectHost {
     this.WW = Math.min(WORK_W, this.W)
     this.HH = Math.max(2, Math.round((this.WW * this.H) / this.W))
 
-    this.canvas = makeCanvas(this.W, this.H)
-    this.ctx = context2d(this.canvas)
+    try {
+      this.renderer = new GlRenderer({
+        height: this.H,
+        maskWidth: this.WW,
+        particleCount: MAX_PARTICLES,
+        width: this.W,
+      })
+    } catch (error) {
+      if (import.meta.env.DEV) console.warn('[meet-thanos] WebGL2 unavailable, using Canvas2D', error)
+    }
+    this.canvas = this.renderer?.canvas ?? makeCanvas(this.W, this.H)
+    this.ctx = context2d(this.renderer ? makeCanvas(this.W, this.H) : this.canvas)
     this.layer = makeCanvas(this.W, this.H)
     this.layerCtx = context2d(this.layer)
     this.fx = makeCanvas(this.W, this.H)
@@ -205,6 +234,10 @@ export class Pipeline implements EffectHost {
     this.bgCtx = context2d(this.bgFull)
     this.small = makeCanvas(this.WW, this.HH)
     this.smallCtx = context2d(this.small, { willReadFrequently: true })
+    this.grab = makeCanvas(this.WW, this.HH)
+    this.grabCtx = context2d(this.grab)
+    this.person = makeCanvas(this.WW, this.HH)
+    this.personCtx = context2d(this.person)
     this.alphaC = makeCanvas(this.WW, this.HH)
     this.alphaCtx = context2d(this.alphaC)
     this.alphaImg = this.alphaCtx.createImageData(this.WW, this.HH)
@@ -225,23 +258,84 @@ export class Pipeline implements EffectHost {
   }
 
   start() {
-    this.timer = window.setInterval(() => this.frame(), 1000 / 30)
-    this.frame()
+    if (typeof this.video.requestVideoFrameCallback === 'function') {
+      const loop: VideoFrameRequestCallback = (now) => {
+        if (this.dead) return
+        if (now >= this.nextFrameAt) {
+          const started = performance.now()
+          const mode = this.sh.mode
+          this.frame()
+          this.recordFrame(performance.now() - started, mode)
+          this.nextFrameAt = now + FRAME_MS
+        }
+        this.videoFrame = this.video.requestVideoFrameCallback(loop)
+      }
+      this.videoFrame = this.video.requestVideoFrameCallback(loop)
+      return
+    }
+    const loop = () => {
+      if (this.dead) return
+      const started = performance.now()
+      const mode = this.sh.mode
+      this.frame()
+      const elapsed = performance.now() - started
+      this.recordFrame(elapsed, mode)
+      const wait = Math.max(0, FRAME_MS - elapsed)
+      this.timer = window.setTimeout(loop, wait)
+    }
+    loop()
   }
 
   destroy() {
     if (this.dead) return
     this.dead = true
-    if (this.timer != null) window.clearInterval(this.timer)
+    if (this.timer != null) window.clearTimeout(this.timer)
+    if (this.videoFrame != null && typeof this.video.cancelVideoFrameCallback === 'function') {
+      this.video.cancelVideoFrameCallback(this.videoFrame)
+    }
     this.video.pause()
     this.video.srcObject = null
     this.video.remove()
+    this.renderer?.destroy()
     this.sh.pipes.delete(this)
     if (this.sh.active === this) {
       const rest = [...this.sh.pipes]
       this.sh.active = rest[rest.length - 1] ?? null
     }
     this.sh.onPipes?.()
+  }
+
+  private recordFrame(elapsed: number, mode: SnapState['mode']) {
+    if (!import.meta.env.DEV) return
+    const gpu = this.renderer?.takeGpuTimes() ?? []
+    if (mode === 'out' || mode === 'in') {
+      if (this.perfTrans !== this.sh.transId) {
+        this.perfFrames.length = 0
+        this.perfGpu.length = 0
+        this.perfMissed = 0
+        this.perfTrans = this.sh.transId
+      }
+      this.perfFrames.push(elapsed)
+      this.perfGpu.push(...gpu)
+      if (elapsed > FRAME_MS) this.perfMissed++
+      return
+    }
+    if (!this.perfFrames.length) return
+    const frames = this.perfFrames.toSorted((a, b) => a - b)
+    const gpuFrames = [...this.perfGpu, ...gpu].toSorted((a, b) => a - b)
+    const percentile = (part: number) => frames[Math.min(frames.length - 1, Math.floor(frames.length * part))] ?? 0
+    const gpuP95 = gpuFrames[Math.min(gpuFrames.length - 1, Math.floor(gpuFrames.length * 0.95))]
+    console.info('[meet-thanos perf]', {
+      frames: frames.length,
+      gpuP95: gpuP95?.toFixed(1) ?? 'n/a',
+      missed: this.perfMissed,
+      p50: percentile(0.5).toFixed(1),
+      p95: percentile(0.95).toFixed(1),
+      pipes: this.sh.pipes.size,
+      renderer: this.renderer ? 'webgl2' : 'canvas2d',
+    })
+    this.perfFrames.length = 0
+    this.perfGpu.length = 0
   }
 
   async captureBg() {
@@ -295,6 +389,7 @@ export class Pipeline implements EffectHost {
     drawCover({ ctx: this.bgCtx, flip: this.sh.bgFlip, h: this.H, img: bg, w: this.W })
     this.smallCtx.drawImage(this.bgFull, 0, 0, this.WW, this.HH)
     this.bgSmall = this.smallCtx.getImageData(0, 0, this.WW, this.HH).data.slice()
+    this.renderer?.updateBackground(this.bgFull)
     this.bgVer = this.sh.bgVer
   }
 
@@ -452,24 +547,16 @@ export class Pipeline implements EffectHost {
   }
 
   matte(alpha: HTMLCanvasElement) {
-    const { H, W, layerCtx: lc } = this
-    lc.globalCompositeOperation = 'source-over'
-    lc.clearRect(0, 0, W, H)
-    lc.drawImage(this.video, 0, 0, W, H)
-    lc.globalCompositeOperation = 'destination-in'
-    lc.filter = 'blur(1.5px)'
-    lc.drawImage(alpha, 0, 0, W, H)
-    lc.filter = 'none'
-    lc.globalCompositeOperation = 'source-over'
-    return this.layer
+    return this.paint({ c: this.person, ctx: this.personCtx, h: this.HH, w: this.WW }, alpha)
   }
 
-  fullMatte() {
+  fullMatte(sharp = false) {
     const a = this.alphaImg.data
     const m = this.maskAvg
     for (let i = 0; i < this.n; i++) a[i * 4 + 3] = m[i] as number
     this.alphaCtx.putImageData(this.alphaImg, 0, 0)
-    return this.matte(this.alphaC)
+    if (!sharp) return this.matte(this.alphaC)
+    return this.paint({ c: this.layer, ctx: this.layerCtx, h: this.H, w: this.W }, this.alphaC)
   }
 
   drawBg() {
@@ -570,11 +657,16 @@ export class Pipeline implements EffectHost {
     const ctx = this.ctx
     for (let pass = 0; pass < 2; pass++) {
       ctx.globalCompositeOperation = pass ? 'lighter' : 'source-over'
+      let style = ''
       for (const p of this.parts) {
         if (p.add !== !!pass) continue
         const drawn = this.placeParticle(p)
         ctx.globalAlpha = Math.max(0, drawn.a) * (p.soft ? 0.35 : 1)
-        ctx.fillStyle = `rgb(${p.r},${p.g},${p.b})`
+        const next = `${p.r & ~7},${p.g & ~7},${p.b & ~7}`
+        if (next !== style) {
+          style = next
+          ctx.fillStyle = `rgb(${next})`
+        }
         if (p.soft) {
           ctx.beginPath()
           ctx.arc(drawn.x, drawn.y, p.size, 0, 6.2832)
@@ -602,9 +694,44 @@ export class Pipeline implements EffectHost {
     this.last = now
     const sh = this.sh
     const ctx = this.ctx
+    if (sh.active && sh.active !== this) {
+      if (this.renderer) {
+        this.renderer.render({
+          active: false,
+          e: 0,
+          effect: sh.effect,
+          gone: false,
+          time: now / 1000,
+          vanishing: false,
+          video: v,
+        })
+        this.renderer.flush()
+      } else {
+        ctx.drawImage(v, 0, 0, this.W, this.H)
+      }
+      this.parts.length = 0
+      this.prevE = null
+      return
+    }
     if (sh.bg && this.bgVer !== sh.bgVer) this.syncBg()
     const q = tick(sh, now)
-
+    if (this.renderer) {
+      const active = sh.enabled && !!sh.bg && sh.mode !== 'live'
+      const amount = active ? ease(q) : 0
+      this.renderer.render({
+        active,
+        e: amount,
+        effect: sh.effect,
+        gone: sh.mode === 'gone',
+        time: now / 1000,
+        vanishing: sh.mode === 'out',
+        video: v,
+      })
+      this.renderer.flush()
+      this.prevE = active ? amount : null
+      if (sh.onFrame && sh.active === this) sh.onFrame()
+      return
+    }
     if (!sh.enabled || !sh.bg || sh.mode === 'live') {
       ctx.drawImage(v, 0, 0, this.W, this.H)
       this.prevE = null
@@ -671,19 +798,81 @@ export class Pipeline implements EffectHost {
     }
   }
 
+  private paint(dest: { c: HTMLCanvasElement, ctx: CanvasRenderingContext2D, h: number, w: number }, alpha: HTMLCanvasElement) {
+    const { c, ctx, h, w } = dest
+    ctx.globalCompositeOperation = 'source-over'
+    ctx.clearRect(0, 0, w, h)
+    ctx.drawImage(this.video, 0, 0, w, h)
+    ctx.globalCompositeOperation = 'destination-in'
+    ctx.drawImage(alpha, 0, 0, w, h)
+    ctx.globalCompositeOperation = 'source-over'
+    return c
+  }
+
+  private sampleMask() {
+    this.smallCtx.drawImage(this.video, 0, 0, this.WW, this.HH)
+    const pixels = this.smallCtx.getImageData(0, 0, this.WW, this.HH).data
+    this.framePx = pixels
+    this.computeMask(pixels)
+  }
+
+  private scheduleMask(now: number) {
+    if (this.maskBusy || now < this.maskAt) return
+    this.maskAt = now + MASK_MS
+    if (!this.bitmapOk) {
+      this.sampleMask()
+      return
+    }
+    this.grabCtx.drawImage(this.video, 0, 0, this.WW, this.HH)
+    const gen = this.maskGen
+    this.maskBusy = true
+    let pending: Promise<ImageBitmap>
+    try {
+      pending = createImageBitmap(this.grab)
+    } catch {
+      this.bitmapOk = false
+      this.maskBusy = false
+      this.sampleMask()
+      return
+    }
+    void pending.then((bmp) => {
+      const stale = this.dead || gen !== this.maskGen
+      if (stale) {
+        bmp.close()
+        this.maskBusy = false
+        return
+      }
+      this.smallCtx.drawImage(bmp, 0, 0)
+      bmp.close()
+      const pixels = this.smallCtx.getImageData(0, 0, this.WW, this.HH).data
+      this.framePx = pixels
+      this.computeMask(pixels)
+      this.maskBusy = false
+    }).catch(() => {
+      this.bitmapOk = false
+      this.maskBusy = false
+      if (this.dead || gen !== this.maskGen) return
+      this.sampleMask()
+    })
+  }
+
   private transition(q: number, now: number) {
     const sh = this.sh
     if (this.transId !== sh.transId) {
       this.transId = sh.transId
       this.maskFrames = 0
+      this.maskGen++
+      this.maskAt = now + MASK_MS
+      this.framePx = null
       this.prevE = null
+      this.sampleMask()
     }
+    const pixels = this.framePx
+    if (!pixels) return
     const e = ease(q)
-    this.smallCtx.drawImage(this.video, 0, 0, this.WW, this.HH)
-    const d = this.smallCtx.getImageData(0, 0, this.WW, this.HH).data
-    this.computeMask(d)
+    this.scheduleMask(now)
     const fx = effects[sh.effect] ?? effects.dust
-    fx.render(this, { d, e, now, prevE: this.prevE, vanishing: sh.mode === 'out' })
+    fx.render(this, { d: pixels, e, now, prevE: this.prevE, vanishing: sh.mode === 'out' })
     this.prevE = e
   }
 }
