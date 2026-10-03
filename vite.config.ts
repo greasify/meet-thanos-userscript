@@ -21,6 +21,9 @@ export default defineConfig({
         'icon': 'greasify.svg',
         'homepage': 'https://greasify.github.io/meet-thanos-userscript/',
         'match': userscriptMatches,
+        'exclude': [
+          'https://meet.jit.si/v1/*',
+        ],
         'run-at': 'document-start',
         'inject-into': 'page',
       },
