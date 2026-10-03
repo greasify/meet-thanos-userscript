@@ -1,6 +1,7 @@
 import { defineConfig } from 'vite'
 import userscript from 'vite-userscript-plugin'
 import pkg from './package.json' with { type: 'json' }
+import { userscriptMatches } from './src/platforms/registry.ts'
 
 export default defineConfig({
   base: './',
@@ -11,14 +12,21 @@ export default defineConfig({
   plugins: [
     userscript({
       entry: 'src/index.ts',
+      fileName: 'meet-thanos',
       autoMetaUrls: true,
       header: {
-        name: pkg.name,
-        version: pkg.version,
-        description: pkg.description,
-        icon: 'greasify.svg',
-        homepage: 'https://greasify.github.io/vite-userscript-template/',
-        match: 'https://example.com/',
+        'name': 'Meet Thanos',
+        'version': pkg.version,
+        'description': pkg.description,
+        'icon': 'greasify.svg',
+        'homepage': 'https://greasify.github.io/meet-thanos-userscript/',
+        'match': userscriptMatches,
+        'grant': 'none',
+        'run-at': 'document-start',
+        'inject-into': 'page',
+      },
+      server: {
+        file: true,
       },
     }),
   ],

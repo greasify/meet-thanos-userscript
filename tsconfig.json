@@ -10,6 +10,8 @@
     "module": "ESNext",
     "moduleResolution": "bundler",
     "resolveJsonModule": true,
+    "allowImportingTsExtensions": true,
+    "checkJs": true,
     "strict": true,
     "strictPropertyInitialization": false,
     "noFallthroughCasesInSwitch": true,
@@ -19,8 +21,7 @@
     "forceConsistentCasingInFileNames": true,
     "isolatedModules": true,
     "verbatimModuleSyntax": true,
-    "skipLibCheck": true,
-    "checkJs": true
+    "skipLibCheck": true
   },
   "include": [
     "src",

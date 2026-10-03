@@ -1,8 +1,26 @@
-import { createCounter } from './counter'
-import './style.scss'
+import { installCameraHook } from './media/hook'
+import { detectPlatform } from './platforms/registry'
+import { readBg } from './snap/settings'
+import { createState, rememberBg } from './state'
+import { mountPanel } from './ui/panel'
 
-await new Promise(resolve => setTimeout(resolve, 1))
+const platform = detectPlatform(location.href)
 
-if (document.body) {
-  document.body.append(createCounter())
+if (platform) {
+  const state = createState()
+  const { toggle } = installCameraHook(state, platform.id)
+  void readBg().then((saved) => {
+    if (!saved) return
+    rememberBg(state, saved.canvas, saved.source)
+    state.refresh()
+  })
+  const mount = () => {
+    try {
+      mountPanel(state, toggle)
+    } catch (error) {
+      console.error('[meet-thanos] could not draw the control pill', error)
+    }
+  }
+  if (document.body) mount()
+  else document.addEventListener('DOMContentLoaded', mount)
 }
