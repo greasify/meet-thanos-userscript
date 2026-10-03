@@ -14,7 +14,7 @@ export const platforms = [
   {
     id: 'telemost',
     matches: [
-      'https://telemost.yandex.ru/*',
+      'https://telemost.yandex.ru/private-join/*',
     ],
   },
 ] as const

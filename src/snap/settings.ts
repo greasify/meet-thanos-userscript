@@ -12,6 +12,8 @@ export interface SnapSettings {
   pill: boolean
   sens: number
   snap: boolean
+  x: number | null
+  y: number | null
 }
 
 interface StoredBg {
@@ -28,6 +30,8 @@ export const DEFAULT_SETTINGS: SnapSettings = {
   pill: true,
   sens: 9,
   snap: true,
+  x: null,
+  y: null,
 }
 
 function clamp(spec: { fallback: number, max: number, min: number, value: number }) {
@@ -39,15 +43,24 @@ function isEffect(value: unknown): value is EffectId {
   return typeof value === 'string' && (effectList as readonly string[]).includes(value)
 }
 
+function readCoord(value: unknown) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return null
+  return value
+}
+
+function readRaw(key: string) {
+  const stored = GM_getValue(key, '')
+  if (stored) return stored
+  const legacy = localStorage.getItem(key)
+  if (!legacy) return ''
+  GM_setValue(key, legacy)
+  return legacy
+}
+
 export function readSettings(): SnapSettings {
   try {
-    const raw = localStorage.getItem(SETTINGS_KEY)
-    if (!raw) {
-      const settings = { ...DEFAULT_SETTINGS }
-      const saved = Number.parseFloat(localStorage.getItem('snap.sens') ?? '')
-      if (saved >= 2 && saved <= 20) settings.sens = saved
-      return settings
-    }
+    const raw = readRaw(SETTINGS_KEY)
+    if (!raw) return { ...DEFAULT_SETTINGS }
     const parsed = JSON.parse(raw) as Partial<SnapSettings>
     return {
       countdown: clamp({ fallback: DEFAULT_SETTINGS.countdown, max: 15, min: 1, value: Number(parsed.countdown) }),
@@ -57,6 +70,8 @@ export function readSettings(): SnapSettings {
       pill: parsed.pill !== false,
       sens: clamp({ fallback: DEFAULT_SETTINGS.sens, max: 20, min: 2, value: Number(parsed.sens) }),
       snap: parsed.snap !== false,
+      x: readCoord(parsed.x),
+      y: readCoord(parsed.y),
     }
   } catch {
     return { ...DEFAULT_SETTINGS }
@@ -65,7 +80,7 @@ export function readSettings(): SnapSettings {
 
 export function writeSettings(settings: SnapSettings) {
   try {
-    localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings))
+    GM_setValue(SETTINGS_KEY, JSON.stringify(settings))
   } catch {
     // Storage can be blocked by the page.
   }
@@ -89,7 +104,7 @@ export function writeBg(canvas: HTMLCanvasElement, source: 'capture' | 'upload')
       source,
       ts: Date.now(),
     }
-    localStorage.setItem(BG_KEY, JSON.stringify(stored))
+    GM_setValue(BG_KEY, JSON.stringify(stored))
   } catch {
     // Storage can be blocked or full.
   }
@@ -97,7 +112,7 @@ export function writeBg(canvas: HTMLCanvasElement, source: 'capture' | 'upload')
 
 export async function readBg() {
   try {
-    const raw = localStorage.getItem(BG_KEY)
+    const raw = readRaw(BG_KEY)
     if (!raw) return null
     const stored = JSON.parse(raw) as Partial<StoredBg>
     if (!stored.dataUrl?.startsWith('data:image/')) return null

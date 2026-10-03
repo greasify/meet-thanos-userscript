@@ -3,6 +3,7 @@
   top: 12px;
   left: 12px;
   z-index: 2147483647;
+  width: max-content;
 }
 
 :host(.is-hidden) {
@@ -56,11 +57,39 @@
   letter-spacing: 0.02em;
 }
 
+.grip {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  cursor: grab;
+  margin-right: -6px;
+  border-radius: 999px;
+  padding: 4px 6px;
+  touch-action: none;
+  color: #8d8d9a;
+
+  &:hover,
+  &.is-dragging {
+    color: #e9e9ee;
+  }
+
+  &.is-dragging {
+    cursor: grabbing;
+  }
+
+  svg {
+    display: block;
+    fill: currentColor;
+  }
+}
+
 .panel {
   display: none;
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
   flex-direction: column;
   gap: 8px;
-  margin-top: 8px;
   border: 1px solid rgb(255 255 255 / 12%);
   border-radius: 14px;
   background: rgb(14 14 16 / 92%);
@@ -72,6 +101,16 @@
   &.open {
     display: flex;
   }
+}
+
+:host(.is-up) .panel {
+  top: auto;
+  bottom: calc(100% + 8px);
+}
+
+:host(.is-end) .panel {
+  right: 0;
+  left: auto;
 }
 
 .row {

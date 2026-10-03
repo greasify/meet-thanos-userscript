@@ -10,10 +10,31 @@ interface Status {
   tone: string
 }
 
+const SVG_NS = 'http://www.w3.org/2000/svg'
+const EDGE = 8
+const DRAG_SLOP = 4
+const PANEL_WIDTH = 230
+
 function sheetOf(css: string) {
   const sheet = new CSSStyleSheet()
   sheet.replaceSync(css)
   return sheet
+}
+
+function gripIcon() {
+  const svg = document.createElementNS(SVG_NS, 'svg')
+  svg.setAttribute('viewBox', '0 0 10 16')
+  svg.setAttribute('width', '10')
+  svg.setAttribute('height', '16')
+  svg.setAttribute('aria-hidden', 'true')
+  for (const [cx, cy] of [[2, 2], [8, 2], [2, 8], [8, 8], [2, 14], [8, 14]]) {
+    const circle = document.createElementNS(SVG_NS, 'circle')
+    circle.setAttribute('cx', String(cx))
+    circle.setAttribute('cy', String(cy))
+    circle.setAttribute('r', '1.25')
+    svg.append(circle)
+  }
+  return svg
 }
 
 export function mountPanel(state: SnapState, toggle: () => void) {
@@ -26,9 +47,12 @@ export function mountPanel(state: SnapState, toggle: () => void) {
   const status = document.createElement('span')
   status.className = 'status'
   status.textContent = 'snap'
+  const grip = document.createElement('span')
+  grip.className = 'grip'
+  grip.append(gripIcon())
   const pill = document.createElement('div')
   pill.className = 'pill'
-  pill.append(dot, status)
+  pill.append(dot, status, grip)
 
   const vanish = document.createElement('button')
   vanish.type = 'button'
@@ -96,14 +120,16 @@ export function mountPanel(state: SnapState, toggle: () => void) {
   let flashMsg = ''
   let flashUntil = 0
   let lastFrame = 0
+  let drag: { id: number, left: number, moved: boolean, top: number, x: number, y: number } | null = null
+  let suppressClick = false
 
   const readStatus = (): Status => {
     if (performance.now() < flashUntil) return { text: flashMsg, tone: 'warn' }
     if (countdown > 0) return { text: `step out... ${countdown}`, tone: 'warn' }
     if (countdown < 0) return { text: 'saving the room...', tone: 'warn' }
     if (!state.enabled) return { text: 'snap off', tone: '' }
-    if (!state.active) return { text: 'snap: waiting for camera', tone: '' }
-    if (!state.bg) return { text: 'snap: set a background', tone: 'warn' }
+    if (!state.active) return { text: 'waiting for camera', tone: '' }
+    if (!state.bg) return { text: 'set a background', tone: 'warn' }
     if (state.mode === 'gone') return { text: 'vanished', tone: 'gone' }
     if (state.mode === 'out') return { text: 'vanishing', tone: '' }
     if (state.mode === 'in') return { text: 'returning', tone: '' }
@@ -111,7 +137,45 @@ export function mountPanel(state: SnapState, toggle: () => void) {
     return { text: 'armed', tone: 'armed' }
   }
 
+  const place = (viewportLeft: number, viewportTop: number) => {
+    const rect = host.getBoundingClientRect()
+    if (rect.width === 0) return null
+    const style = getComputedStyle(host)
+    const styleLeft = Number.parseFloat(style.left)
+    const styleTop = Number.parseFloat(style.top)
+    if (!Number.isFinite(styleLeft) || !Number.isFinite(styleTop)) return null
+    const x = Math.min(Math.max(EDGE, window.innerWidth - rect.width - EDGE), Math.max(EDGE, viewportLeft))
+    const y = Math.min(Math.max(EDGE, window.innerHeight - rect.height - EDGE), Math.max(EDGE, viewportTop))
+    host.style.left = `${x - (rect.left - styleLeft)}px`
+    host.style.top = `${y - (rect.top - styleTop)}px`
+    return { x, y }
+  }
+
+  const flip = () => {
+    const rect = host.getBoundingClientRect()
+    const panelWidth = panel.offsetWidth || PANEL_WIDTH
+    const panelHeight = panel.offsetHeight
+    const needed = panelHeight + EDGE
+    const spaceBelow = window.innerHeight - rect.bottom
+    const spaceAbove = rect.top
+    const overflowRight = rect.left + panelWidth > window.innerWidth - EDGE
+    const fitsEnd = rect.right - panelWidth >= EDGE
+    host.classList.toggle('is-up', open && panelHeight > 0 && spaceBelow < needed + EDGE && spaceAbove >= needed + EDGE)
+    host.classList.toggle('is-end', overflowRight && fitsEnd)
+  }
+
+  const settle = () => {
+    if (hidden || drag) return
+    const rect = host.getBoundingClientRect()
+    const { x, y } = state.settings
+    const left = x != null && y != null ? x : rect.left
+    const top = x != null && y != null ? y : rect.top
+    place(left, top)
+    flip()
+  }
+
   const render = () => {
+    const becameVisible = !hidden && host.classList.contains('is-hidden')
     host.classList.toggle('is-hidden', hidden)
     panel.classList.toggle('open', open)
     pause.textContent = state.settings.snap ? 'pause snap' : 'snaps on'
@@ -120,6 +184,8 @@ export function mountPanel(state: SnapState, toggle: () => void) {
     const next = readStatus()
     dot.className = next.tone ? `dot ${next.tone}` : 'dot'
     status.textContent = next.text
+    if (becameVisible) settle()
+    else if (!hidden) flip()
   }
 
   const flash = (message: string, ms = 2200) => {
@@ -221,10 +287,70 @@ export function mountPanel(state: SnapState, toggle: () => void) {
     render()
   }
 
-  pill.addEventListener('click', () => {
+  const swallowClick = (event: Event) => {
+    if (!suppressClick) return false
+    suppressClick = false
+    event.preventDefault()
+    event.stopPropagation()
+    return true
+  }
+  pill.addEventListener('click', (event) => {
+    if (swallowClick(event)) return
     open = !open
     render()
   })
+  grip.addEventListener('click', (event) => {
+    if (swallowClick(event)) return
+    event.stopPropagation()
+  })
+  grip.addEventListener('pointerdown', (event) => {
+    if (event.button !== 0) return
+    event.preventDefault()
+    event.stopPropagation()
+    const rect = host.getBoundingClientRect()
+    drag = {
+      id: event.pointerId,
+      left: rect.left,
+      moved: false,
+      top: rect.top,
+      x: event.clientX,
+      y: event.clientY,
+    }
+    try {
+      grip.setPointerCapture(event.pointerId)
+    } catch {
+      // The pointer can vanish before capture.
+    }
+  })
+  grip.addEventListener('pointermove', (event) => {
+    if (!drag || drag.id !== event.pointerId) return
+    event.stopPropagation()
+    const dx = event.clientX - drag.x
+    const dy = event.clientY - drag.y
+    if (!drag.moved && Math.hypot(dx, dy) < DRAG_SLOP) return
+    drag.moved = true
+    grip.classList.add('is-dragging')
+    place(drag.left + dx, drag.top + dy)
+    flip()
+  })
+  const finishDrag = (event: PointerEvent) => {
+    if (!drag || drag.id !== event.pointerId) return
+    event.stopPropagation()
+    if (drag.moved) {
+      const rect = host.getBoundingClientRect()
+      state.settings.x = rect.left
+      state.settings.y = rect.top
+      writeSettings(state.settings)
+      suppressClick = true
+      window.setTimeout(() => {
+        suppressClick = false
+      }, 0)
+    }
+    drag = null
+    grip.classList.remove('is-dragging')
+  }
+  grip.addEventListener('pointerup', finishDrag)
+  grip.addEventListener('pointercancel', finishDrag)
   vanish.addEventListener('click', toggle)
   pause.addEventListener('click', () => {
     state.settings.snap = !state.settings.snap
@@ -284,5 +410,7 @@ export function mountPanel(state: SnapState, toggle: () => void) {
 
   ;(document.body ?? document.documentElement).append(host)
   render()
+  settle()
+  window.addEventListener('resize', settle)
   window.setInterval(render, 1000)
 }

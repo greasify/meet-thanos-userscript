@@ -28,7 +28,7 @@ Another Jitsi host is one entry in [`src/platforms/registry.ts`](src/platforms/r
    - **Background** — Snap needs to know what's behind you. Either:
      - **Capture empty room**: press it, step out of frame, and wait for the beep. The countdown is 5 seconds by default (stored with the other settings; there is no slider for it).
      - **Upload background**: if you use a macOS camera background (Control Center → Video Effects → Background), upload the same picture. The camera then already shows you on top of a known image, so the cut-out is clean and you never need to leave the frame. Snap figures out on its own if the picture needs to be mirrored.
-     The background is saved in `localStorage`, so it survives reloads.
+     The background is saved in the userscript manager, so it survives reloads and is the same on Meet, Jitsi and Telemost.
    - **Effect** — pick one of 6.
    - **Duration** — how long the vanish takes.
 3. Snap your fingers (a normal, sharp snap) to vanish. Snap again to come back. You can snap as many times as you like, and snapping mid-way turns the effect around.
@@ -60,7 +60,7 @@ Turning the camera off and on again keeps the saved room. Everyone in the call s
 
 ## Privacy
 
-Everything happens locally, inside your browser: no camera frame and no microphone audio is ever sent anywhere, and the script talks to no server. The microphone is only used to listen for the finger snap itself. The audio is never stored or recorded, and it is released when Snap is switched off or the finger snap trigger is paused. The saved background image stays in `localStorage` for this site on your computer.
+Everything happens locally, inside your browser: no camera frame and no microphone audio is ever sent anywhere, and the script talks to no server. The microphone is only used to listen for the finger snap itself. The audio is never stored or recorded, and it is released when Snap is switched off or the finger snap trigger is paused. The saved background and the other pill settings stay in the userscript manager on your computer, shared across Meet, Jitsi and Telemost.
 
 ## Develop
 
