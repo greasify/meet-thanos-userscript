@@ -4,6 +4,7 @@ import { ease, effects } from './effects'
 import { GlRenderer } from './gl/renderer'
 
 const WORK_W = 320
+const EMPTY_PIXELS = new Uint8ClampedArray()
 const FRAME_MS = 1000 / 30
 const MASK_MS = 120
 const DIFF_T = 70
@@ -170,6 +171,9 @@ export class Pipeline implements EffectHost {
   grabCtx: CanvasRenderingContext2D
   hedgeL: EffectHost['hedgeL'] = null
   hedgeR: EffectHost['hedgeR'] = null
+  hold: HTMLCanvasElement
+  holdCtx: CanvasRenderingContext2D
+  holdReady = false
   labels: Int32Array
   last = performance.now()
   layer: HTMLCanvasElement
@@ -244,6 +248,8 @@ export class Pipeline implements EffectHost {
     this.glowC = makeCanvas(this.WW, this.HH)
     this.glowCtx = context2d(this.glowC)
     this.glowImg = this.glowCtx.createImageData(this.WW, this.HH)
+    this.hold = makeCanvas(this.W, this.H)
+    this.holdCtx = context2d(this.hold)
 
     const n = this.WW * this.HH
     this.n = n
@@ -695,6 +701,7 @@ export class Pipeline implements EffectHost {
     const sh = this.sh
     const ctx = this.ctx
     if (sh.active && sh.active !== this) {
+      if (sh.mode === 'live' || sh.effect !== 'freeze') this.holdReady = false
       if (this.renderer) {
         this.renderer.render({
           active: false,
@@ -715,8 +722,10 @@ export class Pipeline implements EffectHost {
     }
     if (sh.bg && this.bgVer !== sh.bgVer) this.syncBg()
     const q = tick(sh, now)
+    const freeze = sh.enabled && sh.effect === 'freeze' && sh.mode !== 'live'
+    if (!freeze) this.holdReady = false
+    const active = sh.enabled && (sh.effect === 'freeze' || !!sh.bg) && sh.mode !== 'live'
     if (this.renderer) {
-      const active = sh.enabled && !!sh.bg && sh.mode !== 'live'
       const amount = active ? ease(q) : 0
       this.renderer.render({
         active,
@@ -732,9 +741,25 @@ export class Pipeline implements EffectHost {
       if (sh.onFrame && sh.active === this) sh.onFrame()
       return
     }
-    if (!sh.enabled || !sh.bg || sh.mode === 'live') {
+    if (!active) {
       ctx.drawImage(v, 0, 0, this.W, this.H)
       this.prevE = null
+    } else if (freeze) {
+      if (!this.holdReady) {
+        this.holdCtx.drawImage(v, 0, 0, this.W, this.H)
+        this.holdReady = true
+      }
+      effects.freeze.render(this, {
+        d: this.framePx ?? EMPTY_PIXELS,
+        e: ease(q),
+        now,
+        prevE: this.prevE,
+        vanishing: sh.mode === 'out',
+      })
+      this.prevE = ease(q)
+      this.parts.length = 0
+      if (sh.onFrame && sh.active === this) sh.onFrame()
+      return
     } else if (sh.mode === 'gone') {
       this.drawBg()
       this.prevE = null

@@ -256,12 +256,12 @@ vec3 renderHedge(vec3 background) {
 }
 
 void main() {
-  if (uHasBackground == 1 && uActive == 1 && uGone == 1) {
+  if (uHasBackground == 1 && uActive == 1 && uGone == 1 && uEffect != 6) {
     outColor = vec4(backgroundAt(vUv), 1.0);
     return;
   }
   vec3 videoColor = texture(uVideo, vUv).rgb;
-  if (uHasBackground == 0 || uActive == 0) {
+  if (uHasBackground == 0 || uActive == 0 || uEffect == 6) {
     outColor = vec4(videoColor, 1.0);
     return;
   }
@@ -278,8 +278,10 @@ void main() {
     color = renderMelt(background);
   } else if (uEffect == 4) {
     color = renderPortal(background);
-  } else {
+  } else if (uEffect == 5) {
     color = renderHedge(background);
+  } else {
+    color = videoColor;
   }
   float liveMix = 1.0 - smoother(uEffectAmount / 0.12);
   color = mix(color, videoColor, liveMix);

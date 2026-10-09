@@ -16,6 +16,7 @@ const DEFAULT_DIFF_THRESHOLD = 70 / 255
 const EFFECT_INDEX: Record<EffectId, number> = {
   burn: 1,
   dust: 0,
+  freeze: 6,
   ghost: 2,
   hedge: 5,
   melt: 3,
@@ -212,6 +213,7 @@ export class GlRenderer {
   private readonly particleCount: number
   private resources: Resources | null = null
   private videoHeight = 0
+  private videoHeld = false
   private videoWidth = 0
   private readonly width: number
 
@@ -267,12 +269,14 @@ export class GlRenderer {
 
     const { gl, resources } = this
     const active = frame.active && this.backgroundReady
+    const hold = frame.active && frame.effect === 'freeze'
     this.pollGpuQueries()
     const query = this.gpuExt ? gl.createQuery() : null
     if (query && this.gpuExt) gl.beginQuery(this.gpuExt.TIME_ELAPSED_EXT, query)
     gl.disable(gl.BLEND)
     gl.disable(gl.DEPTH_TEST)
-    if (!active || !frame.gone) {
+    const shouldUpload = hold ? !this.videoHeld : (!active || !frame.gone)
+    if (shouldUpload) {
       gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true)
       gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false)
       gl.activeTexture(gl.TEXTURE0)
@@ -285,10 +289,11 @@ export class GlRenderer {
         gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gl.RGB, gl.UNSIGNED_BYTE, frame.video)
       }
     }
+    this.videoHeld = hold
 
-    if (active && !frame.gone) this.renderMask()
+    if (active && !frame.gone && !hold) this.renderMask()
     this.renderEffect(frame, active)
-    if (active && !frame.gone && this.hasParticles(frame.effect)) this.renderParticles(frame)
+    if (active && !frame.gone && !hold && this.hasParticles(frame.effect)) this.renderParticles(frame)
     if (query && this.gpuExt) {
       gl.endQuery(this.gpuExt.TIME_ELAPSED_EXT)
       this.gpuPending.push(query)
@@ -322,6 +327,7 @@ export class GlRenderer {
     this.gpuPending.length = 0
     this.gpuTimes.length = 0
     this.videoHeight = 0
+    this.videoHeld = false
     this.videoWidth = 0
   }
 
@@ -410,6 +416,7 @@ export class GlRenderer {
     gl.bindFramebuffer(gl.FRAMEBUFFER, null)
     this.backgroundReady = false
     this.videoHeight = 0
+    this.videoHeld = false
     this.videoWidth = 0
   }
 

@@ -137,7 +137,8 @@ export function installCameraHook(state: SnapState, platformId: PlatformId) {
       state.flash('no camera yet')
       return
     }
-    if (!state.bg) {
+    const effect = state.mode === 'live' ? state.settings.effect : state.effect
+    if (!state.bg && effect !== 'freeze') {
       state.flash('set a background first')
       return
     }

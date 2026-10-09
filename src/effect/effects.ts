@@ -1,4 +1,4 @@
-export const effectList = ['dust', 'burn', 'ghost', 'melt', 'portal', 'hedge'] as const
+export const effectList = ['dust', 'burn', 'ghost', 'melt', 'portal', 'hedge', 'freeze'] as const
 
 export type EffectId = typeof effectList[number]
 export type ParticleKind = 'drop' | 'dust' | 'ember' | 'leaf' | 'swirl' | 'wisp'
@@ -59,6 +59,7 @@ export interface EffectHost {
   glowImg: ImageData
   hedgeL: HedgePanel | null
   hedgeR: HedgePanel | null
+  hold: HTMLCanvasElement
   maskAvg: Float32Array
   meltN: Float32Array | null
   n: number
@@ -429,6 +430,14 @@ const portal: VanishEffect = {
   },
 }
 
+const freeze: VanishEffect = {
+  durScale: 0.2,
+  label: 'Freeze',
+  render: (pl) => {
+    pl.ctx.drawImage(pl.hold, 0, 0)
+  },
+}
+
 const hedge: VanishEffect = {
   label: 'Hedge',
   render: (pl, { e, now, prevE, vanishing }) => {
@@ -490,6 +499,7 @@ const hedge: VanishEffect = {
 export const effects: Record<EffectId, VanishEffect> = {
   burn,
   dust,
+  freeze,
   ghost,
   hedge,
   melt,

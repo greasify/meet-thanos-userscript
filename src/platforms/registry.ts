@@ -9,6 +9,7 @@ export const platforms = [
     id: 'jitsi',
     matches: [
       'https://meet.jit.si/*',
+      'https://meet.it-expertise.ru/*',
     ],
   },
   {
