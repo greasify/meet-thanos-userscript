@@ -122,6 +122,10 @@
   }
 }
 
+button.is-off {
+  display: none;
+}
+
 button,
 select {
   cursor: pointer;
@@ -150,6 +154,10 @@ label {
   flex-direction: column;
   gap: 4px;
   color: #a9a9b6;
+
+  &.is-off {
+    display: none;
+  }
 }
 
 input[type='range'] {

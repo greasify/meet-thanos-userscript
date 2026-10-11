@@ -256,12 +256,12 @@ vec3 renderHedge(vec3 background) {
 }
 
 void main() {
-  if (uHasBackground == 1 && uActive == 1 && uGone == 1 && uEffect != 6) {
+  if (uHasBackground == 1 && uActive == 1 && uGone == 1 && uEffect != 6 && uEffect != 7) {
     outColor = vec4(backgroundAt(vUv), 1.0);
     return;
   }
   vec3 videoColor = texture(uVideo, vUv).rgb;
-  if (uHasBackground == 0 || uActive == 0 || uEffect == 6) {
+  if (uHasBackground == 0 || uActive == 0 || uEffect == 6 || uEffect == 7) {
     outColor = vec4(videoColor, 1.0);
     return;
   }

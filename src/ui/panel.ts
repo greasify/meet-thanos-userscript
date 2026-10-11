@@ -1,5 +1,5 @@
 import type { SnapState } from '../state'
-import { effectList, effects } from '../effect/effects'
+import { effectList, effects, LAG_MAX_MS, LAG_MIN_MS } from '../effect/effects'
 import { setSensitivity } from '../snap/detector'
 import { writeBg, writeSettings } from '../snap/settings'
 import { rememberBg } from '../state'
@@ -73,6 +73,20 @@ export function mountPanel(state: SnapState, toggle: () => void) {
   }
   effect.value = state.settings.effect
 
+  const lagReverse = document.createElement('button')
+  lagReverse.type = 'button'
+  const lagLoop = document.createElement('button')
+  lagLoop.type = 'button'
+  const lagDuration = document.createElement('input')
+  lagDuration.type = 'range'
+  lagDuration.min = String(LAG_MIN_MS)
+  lagDuration.max = String(LAG_MAX_MS)
+  lagDuration.step = '100'
+  lagDuration.value = String(state.settings.lagDuration)
+  const lagDurationText = document.createTextNode('')
+  const lagDurationLabel = document.createElement('label')
+  lagDurationLabel.append(lagDurationText, lagDuration)
+
   const capture = document.createElement('button')
   capture.type = 'button'
   capture.textContent = 'capture empty room'
@@ -110,7 +124,7 @@ export function mountPanel(state: SnapState, toggle: () => void) {
   hint.textContent = 'Step out, capture or upload the room, then snap. Cmd or Ctrl + Shift + X vanishes. Alt + Shift + P pauses the snap. Cmd or Ctrl + Shift + H hides this.'
   const panel = document.createElement('div')
   panel.className = 'panel'
-  panel.append(row, effect, capture, upload, file, sensLabel, durationLabel, power, hint)
+  panel.append(row, effect, lagReverse, lagLoop, lagDurationLabel, capture, upload, file, sensLabel, durationLabel, power, hint)
   root.append(pill, panel)
 
   let open = false
@@ -181,6 +195,13 @@ export function mountPanel(state: SnapState, toggle: () => void) {
     pause.textContent = state.settings.snap ? 'pause snap' : 'snaps on'
     power.textContent = state.enabled ? 'turn snap off' : 'turn snap on'
     durationText.data = `duration ${(Number(duration.value) / 1000).toFixed(1)}s `
+    const lagOn = state.settings.effect === 'lag'
+    lagReverse.classList.toggle('is-off', !lagOn)
+    lagReverse.textContent = state.settings.lagReverse ? 'reverse on' : 'reverse off'
+    lagLoop.classList.toggle('is-off', !lagOn)
+    lagLoop.textContent = state.settings.lagLoop ? 'loop on' : 'loop off'
+    lagDurationLabel.classList.toggle('is-off', !lagOn)
+    lagDurationText.data = `record ${(Number(lagDuration.value) / 1000).toFixed(1)}s `
     const next = readStatus()
     dot.className = next.tone ? `dot ${next.tone}` : 'dot'
     status.textContent = next.text
@@ -361,6 +382,19 @@ export function mountPanel(state: SnapState, toggle: () => void) {
     if (!(effectList as readonly string[]).includes(next)) return
     state.settings.effect = next as typeof state.settings.effect
     save()
+  })
+  lagReverse.addEventListener('click', () => {
+    state.settings.lagReverse = !state.settings.lagReverse
+    save()
+  })
+  lagLoop.addEventListener('click', () => {
+    state.settings.lagLoop = !state.settings.lagLoop
+    save()
+  })
+  lagDuration.addEventListener('input', () => {
+    state.settings.lagDuration = Number.parseFloat(lagDuration.value)
+    writeSettings(state.settings)
+    render()
   })
   capture.addEventListener('click', () => {
     void runCapture()

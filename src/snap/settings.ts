@@ -1,5 +1,5 @@
 import type { EffectId } from '../effect/effects'
-import { effectList } from '../effect/effects'
+import { effectList, LAG_MAX_MS, LAG_MIN_MS } from '../effect/effects'
 
 const SETTINGS_KEY = 'snap.settings'
 const BG_KEY = 'snap.bg'
@@ -9,6 +9,9 @@ export interface SnapSettings {
   duration: number
   effect: EffectId
   enabled: boolean
+  lagDuration: number
+  lagLoop: boolean
+  lagReverse: boolean
   pill: boolean
   sens: number
   snap: boolean
@@ -27,6 +30,9 @@ export const DEFAULT_SETTINGS: SnapSettings = {
   duration: 2000,
   effect: 'dust',
   enabled: true,
+  lagDuration: 500,
+  lagLoop: false,
+  lagReverse: false,
   pill: true,
   sens: 9,
   snap: true,
@@ -67,6 +73,9 @@ export function readSettings(): SnapSettings {
       duration: clamp({ fallback: DEFAULT_SETTINGS.duration, max: 6000, min: 500, value: Number(parsed.duration) }),
       effect: isEffect(parsed.effect) ? parsed.effect : DEFAULT_SETTINGS.effect,
       enabled: parsed.enabled !== false,
+      lagDuration: clamp({ fallback: DEFAULT_SETTINGS.lagDuration, max: LAG_MAX_MS, min: LAG_MIN_MS, value: Number(parsed.lagDuration) }),
+      lagLoop: parsed.lagLoop === true,
+      lagReverse: parsed.lagReverse === true,
       pill: parsed.pill !== false,
       sens: clamp({ fallback: DEFAULT_SETTINGS.sens, max: 20, min: 2, value: Number(parsed.sens) }),
       snap: parsed.snap !== false,

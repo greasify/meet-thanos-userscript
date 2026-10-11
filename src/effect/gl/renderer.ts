@@ -1,4 +1,5 @@
 import type { EffectId } from '../effects'
+import { LAG_MAX_FRAMES, lagFrameAt, lagPlan } from '../effects'
 import {
   BLUR_FRAGMENT_SHADER,
   EFFECT_FRAGMENT_SHADER,
@@ -19,6 +20,7 @@ const EFFECT_INDEX: Record<EffectId, number> = {
   freeze: 6,
   ghost: 2,
   hedge: 5,
+  lag: 7,
   melt: 3,
   portal: 4,
 }
@@ -36,6 +38,9 @@ export interface GlRenderFrame {
   e: number
   effect: EffectId
   gone: boolean
+  lagDuration: number
+  lagLoop: boolean
+  lagReverse: boolean
   /** Time in seconds. */
   time: number
   vanishing: boolean
@@ -62,6 +67,7 @@ interface Resources {
   blurProgram: Program
   effectProgram: Program
   fullscreenVao: WebGLVertexArrayObject
+  lagTextures: WebGLTexture[]
   maskAFramebuffer: WebGLFramebuffer
   maskATexture: WebGLTexture
   maskBFramebuffer: WebGLFramebuffer
@@ -208,6 +214,11 @@ export class GlRenderer {
   private readonly gpuPending: WebGLQuery[] = []
   private readonly gpuTimes: number[] = []
   private readonly height: number
+  private lagCount = 0
+  private lagInterval = 0
+  private lagLastSample = 0
+  private lagLimit = 0
+  private lagPlayAt = 0
   private readonly maskHeight: number
   private readonly maskWidth: number
   private readonly particleCount: number
@@ -270,12 +281,25 @@ export class GlRenderer {
     const { gl, resources } = this
     const active = frame.active && this.backgroundReady
     const hold = frame.active && frame.effect === 'freeze'
+    const lag = frame.active && frame.effect === 'lag'
+    if (!lag) {
+      this.lagCount = 0
+      this.lagInterval = 0
+      this.lagLastSample = 0
+      this.lagLimit = 0
+      this.lagPlayAt = 0
+    } else if (this.lagLimit === 0) {
+      const plan = lagPlan(frame.lagDuration)
+      this.lagInterval = plan.interval
+      this.lagLimit = plan.frames
+    }
+    const capturing = lag && this.lagCount < this.lagLimit
     this.pollGpuQueries()
     const query = this.gpuExt ? gl.createQuery() : null
     if (query && this.gpuExt) gl.beginQuery(this.gpuExt.TIME_ELAPSED_EXT, query)
     gl.disable(gl.BLEND)
     gl.disable(gl.DEPTH_TEST)
-    const shouldUpload = hold ? !this.videoHeld : (!active || !frame.gone)
+    const shouldUpload = hold ? !this.videoHeld : (capturing || (!lag && (!active || !frame.gone)))
     if (shouldUpload) {
       gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true)
       gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false)
@@ -290,10 +314,20 @@ export class GlRenderer {
       }
     }
     this.videoHeld = hold
+    const stamp = frame.time * 1000
+    if (capturing && (this.lagCount === 0 || stamp - this.lagLastSample >= this.lagInterval)) {
+      this.rememberLagFrame(frame.video, stamp)
+    }
+    const played = lag && this.lagLimit > 0 && this.lagCount >= this.lagLimit
+      ? resources.lagTextures[lagFrameAt(stamp - this.lagPlayAt, this.lagCount, {
+        loop: frame.lagLoop,
+        reverse: frame.lagReverse,
+      })]
+      : undefined
 
-    if (active && !frame.gone && !hold) this.renderMask()
-    this.renderEffect(frame, active)
-    if (active && !frame.gone && !hold && this.hasParticles(frame.effect)) this.renderParticles(frame)
+    if (active && !frame.gone && !hold && !lag) this.renderMask()
+    this.renderEffect(frame, active, played ?? resources.videoTexture)
+    if (active && !frame.gone && !hold && !lag && this.hasParticles(frame.effect)) this.renderParticles(frame)
     if (query && this.gpuExt) {
       gl.endQuery(this.gpuExt.TIME_ELAPSED_EXT)
       this.gpuPending.push(query)
@@ -329,6 +363,11 @@ export class GlRenderer {
     this.videoHeight = 0
     this.videoHeld = false
     this.videoWidth = 0
+    this.lagCount = 0
+    this.lagInterval = 0
+    this.lagLastSample = 0
+    this.lagLimit = 0
+    this.lagPlayAt = 0
   }
 
   private readonly onContextRestored = () => {
@@ -379,6 +418,10 @@ export class GlRenderer {
       width: this.maskWidth,
     }
     const videoTexture = createTexture(gl, { ...rgba, height: 1, width: 1 })
+    const lagTextures: WebGLTexture[] = []
+    for (let index = 0; index < LAG_MAX_FRAMES; index++) {
+      lagTextures.push(createTexture(gl, { ...rgba, height: 1, width: 1 }))
+    }
     const backgroundUploadTexture = createTexture(gl, { ...rgba, height: 1, width: 1 })
     const backgroundTexture = createTexture(gl, rgba)
     const maskATexture = createTexture(gl, mask)
@@ -402,6 +445,7 @@ export class GlRenderer {
       blurProgram,
       effectProgram,
       fullscreenVao,
+      lagTextures,
       maskAFramebuffer: createFramebuffer(gl, maskATexture),
       maskATexture,
       maskBFramebuffer: createFramebuffer(gl, maskBTexture),
@@ -418,6 +462,11 @@ export class GlRenderer {
     this.videoHeight = 0
     this.videoHeld = false
     this.videoWidth = 0
+    this.lagCount = 0
+    this.lagInterval = 0
+    this.lagLastSample = 0
+    this.lagLimit = 0
+    this.lagPlayAt = 0
   }
 
   private uploadBackground(source: CanvasImageSource, size: { height: number, width: number }) {
@@ -479,7 +528,21 @@ export class GlRenderer {
     this.drawFullscreen()
   }
 
-  private renderEffect(frame: GlRenderFrame, active: boolean) {
+  private readonly rememberLagFrame = (video: HTMLVideoElement, stamp: number) => {
+    const resources = this.resources
+    const texture = resources?.lagTextures[this.lagCount]
+    if (!resources || !texture) return
+    const { gl } = this
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true)
+    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false)
+    gl.bindTexture(gl.TEXTURE_2D, texture)
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, video)
+    this.lagLastSample = stamp
+    this.lagCount += 1
+    if (this.lagCount >= this.lagLimit) this.lagPlayAt = stamp
+  }
+
+  private renderEffect(frame: GlRenderFrame, active: boolean, video: WebGLTexture) {
     const resources = this.resources
     if (!resources) return
     const { gl } = this
@@ -488,7 +551,7 @@ export class GlRenderer {
     gl.viewport(0, 0, this.width, this.height)
     gl.disable(gl.BLEND)
     gl.useProgram(program.handle)
-    this.bindTexture(resources.videoTexture, 0)
+    this.bindTexture(video, 0)
     this.bindTexture(resources.backgroundTexture, 1)
     this.bindTexture(resources.maskATexture, 2)
     gl.uniform1i(uniform(gl, program, 'uVideo'), 0)
@@ -577,6 +640,7 @@ export class GlRenderer {
     gl.deleteTexture(resources.maskATexture)
     gl.deleteTexture(resources.maskBTexture)
     gl.deleteTexture(resources.videoTexture)
+    for (const texture of resources.lagTextures) gl.deleteTexture(texture)
     gl.deleteBuffer(resources.particleBuffer)
     gl.deleteVertexArray(resources.fullscreenVao)
     gl.deleteVertexArray(resources.particleVao)

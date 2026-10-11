@@ -1,6 +1,40 @@
-export const effectList = ['dust', 'burn', 'ghost', 'melt', 'portal', 'hedge', 'freeze'] as const
+export const effectList = ['dust', 'burn', 'ghost', 'melt', 'portal', 'hedge', 'freeze', 'lag'] as const
 
 export type EffectId = typeof effectList[number]
+
+export const LAG_MAX_FRAMES = 16
+export const LAG_MAX_MS = 2000
+export const LAG_MIN_MS = 200
+
+const LAG_MIN_GAP_MS = 50
+const LAG_SCRIPT_SPAN = 7
+const LAG_STEP_MS = 90
+const LAG_SCRIPT = [0, 0, 1, 2, 2, 2, 1, 3, 4, 4, 5, 6, 6, 6, 5, 7]
+
+export function lagPlan(durationMs: number) {
+  const duration = Math.min(LAG_MAX_MS, Math.max(LAG_MIN_MS, durationMs))
+  const frames = Math.min(LAG_MAX_FRAMES, Math.max(2, Math.round(duration / LAG_MIN_GAP_MS)))
+  return {
+    frames,
+    interval: duration / Math.max(1, frames - 1),
+  }
+}
+
+export function lagFrameAt(playMs: number, count: number, play: { loop: boolean, reverse: boolean }) {
+  if (count < 1) return 0
+  const step = Math.floor(playMs / LAG_STEP_MS)
+  if (play.loop) {
+    const cursor = ((step % count) + count) % count
+    return play.reverse ? cursor : count - 1 - cursor
+  }
+  const length = LAG_SCRIPT.length
+  const script = LAG_SCRIPT[((step % length) + length) % length] ?? 0
+  const forward = Math.round((script / LAG_SCRIPT_SPAN) * (count - 1))
+  const index = play.reverse ? count - 1 - forward : forward
+  return Math.min(count - 1, Math.max(0, index))
+}
+
+export const skipsBackground = (effect: EffectId) => effect === 'freeze' || effect === 'lag'
 export type ParticleKind = 'drop' | 'dust' | 'ember' | 'leaf' | 'swirl' | 'wisp'
 
 export interface SwirlExtra {
@@ -438,6 +472,14 @@ const freeze: VanishEffect = {
   },
 }
 
+const lag: VanishEffect = {
+  durScale: 0.2,
+  label: 'Lag',
+  render: (pl) => {
+    pl.ctx.drawImage(pl.hold, 0, 0)
+  },
+}
+
 const hedge: VanishEffect = {
   label: 'Hedge',
   render: (pl, { e, now, prevE, vanishing }) => {
@@ -502,6 +544,7 @@ export const effects: Record<EffectId, VanishEffect> = {
   freeze,
   ghost,
   hedge,
+  lag,
   melt,
   portal,
 }

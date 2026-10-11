@@ -1,6 +1,6 @@
 import type { PlatformId } from '../platforms/registry'
 import type { SnapState } from '../state'
-import { effects } from '../effect/effects'
+import { effects, skipsBackground } from '../effect/effects'
 import { Pipeline, tick } from '../effect/pipeline'
 import { isCameraRequest } from '../platforms/camera'
 import { startSnapDetector } from '../snap/detector'
@@ -138,7 +138,7 @@ export function installCameraHook(state: SnapState, platformId: PlatformId) {
       return
     }
     const effect = state.mode === 'live' ? state.settings.effect : state.effect
-    if (!state.bg && effect !== 'freeze') {
+    if (!state.bg && !skipsBackground(effect)) {
       state.flash('set a background first')
       return
     }

@@ -1,6 +1,6 @@
 import type { SnapState } from '../state'
 import type { EffectHost, ParticleKind, SpawnSpec } from './effects'
-import { ease, effects } from './effects'
+import { ease, effects, lagFrameAt, lagPlan, skipsBackground } from './effects'
 import { GlRenderer } from './gl/renderer'
 
 const WORK_W = 320
@@ -175,6 +175,12 @@ export class Pipeline implements EffectHost {
   holdCtx: CanvasRenderingContext2D
   holdReady = false
   labels: Int32Array
+  lagCount = 0
+  lagInterval = 0
+  lagLastSample = 0
+  lagLimit = 0
+  lagPlayAt = 0
+  lagSlots: HTMLCanvasElement[] = []
   last = performance.now()
   layer: HTMLCanvasElement
   layerCtx: CanvasRenderingContext2D
@@ -702,12 +708,20 @@ export class Pipeline implements EffectHost {
     const ctx = this.ctx
     if (sh.active && sh.active !== this) {
       if (sh.mode === 'live' || sh.effect !== 'freeze') this.holdReady = false
+      if (sh.mode === 'live' || sh.effect !== 'lag') {
+        this.lagCount = 0
+        this.lagInterval = 0
+        this.lagLimit = 0
+      }
       if (this.renderer) {
         this.renderer.render({
           active: false,
           e: 0,
           effect: sh.effect,
           gone: false,
+          lagDuration: sh.settings.lagDuration,
+          lagLoop: sh.settings.lagLoop,
+          lagReverse: sh.settings.lagReverse,
           time: now / 1000,
           vanishing: false,
           video: v,
@@ -723,8 +737,18 @@ export class Pipeline implements EffectHost {
     if (sh.bg && this.bgVer !== sh.bgVer) this.syncBg()
     const q = tick(sh, now)
     const freeze = sh.enabled && sh.effect === 'freeze' && sh.mode !== 'live'
+    const lag = sh.enabled && sh.effect === 'lag' && sh.mode !== 'live'
     if (!freeze) this.holdReady = false
-    const active = sh.enabled && (sh.effect === 'freeze' || !!sh.bg) && sh.mode !== 'live'
+    if (!lag) {
+      this.lagCount = 0
+      this.lagInterval = 0
+      this.lagLimit = 0
+    } else if (this.lagLimit === 0) {
+      const plan = lagPlan(sh.settings.lagDuration)
+      this.lagInterval = plan.interval
+      this.lagLimit = plan.frames
+    }
+    const active = sh.enabled && (skipsBackground(sh.effect) || !!sh.bg) && sh.mode !== 'live'
     if (this.renderer) {
       const amount = active ? ease(q) : 0
       this.renderer.render({
@@ -732,6 +756,9 @@ export class Pipeline implements EffectHost {
         e: amount,
         effect: sh.effect,
         gone: sh.mode === 'gone',
+        lagDuration: sh.settings.lagDuration,
+        lagLoop: sh.settings.lagLoop,
+        lagReverse: sh.settings.lagReverse,
         time: now / 1000,
         vanishing: sh.mode === 'out',
         video: v,
@@ -760,6 +787,28 @@ export class Pipeline implements EffectHost {
       this.parts.length = 0
       if (sh.onFrame && sh.active === this) sh.onFrame()
       return
+    } else if (lag) {
+      if (this.lagCount < this.lagLimit) {
+        ctx.drawImage(v, 0, 0, this.W, this.H)
+        if (this.lagCount === 0 || now - this.lagLastSample >= this.lagInterval) this.keepLagSlot(v, now)
+      } else {
+        const slot = this.lagSlots[lagFrameAt(now - this.lagPlayAt, this.lagCount, {
+          loop: sh.settings.lagLoop,
+          reverse: sh.settings.lagReverse,
+        })]
+        if (slot) this.holdCtx.drawImage(slot, 0, 0, this.W, this.H)
+        effects.lag.render(this, {
+          d: this.framePx ?? EMPTY_PIXELS,
+          e: ease(q),
+          now,
+          prevE: this.prevE,
+          vanishing: sh.mode === 'out',
+        })
+      }
+      this.prevE = ease(q)
+      this.parts.length = 0
+      if (sh.onFrame && sh.active === this) sh.onFrame()
+      return
     } else if (sh.mode === 'gone') {
       this.drawBg()
       this.prevE = null
@@ -769,6 +818,20 @@ export class Pipeline implements EffectHost {
     this.updateParticles(dt)
     if (this.parts.length) this.drawParticles()
     if (sh.onFrame && sh.active === this) sh.onFrame()
+  }
+
+  private readonly keepLagSlot = (video: HTMLVideoElement, stamp: number) => {
+    let slot = this.lagSlots[this.lagCount]
+    if (!slot) {
+      slot = makeCanvas(this.W, this.H)
+      this.lagSlots[this.lagCount] = slot
+    }
+    const slotCtx = slot.getContext('2d')
+    if (!slotCtx) return
+    slotCtx.drawImage(video, 0, 0, this.W, this.H)
+    this.lagCount += 1
+    this.lagLastSample = stamp
+    if (this.lagCount >= this.lagLimit) this.lagPlayAt = stamp
   }
 
   private stepParticle(p: Particle, dt: number) {
