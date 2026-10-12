@@ -94,7 +94,7 @@
   border-radius: 14px;
   background: rgb(14 14 16 / 92%);
   padding: 10px;
-  width: 230px;
+  width: 256px;
   color: #e9e9ee;
   font-size: 12px;
 
@@ -117,7 +117,8 @@
   display: flex;
   gap: 6px;
 
-  button {
+  button,
+  .toggle {
     flex: 1;
   }
 }
@@ -142,10 +143,60 @@ select {
 }
 
 button.is-main {
+  position: relative;
   background: #6d4aff;
+  overflow: hidden;
 
   &:hover {
     background: #7d5cff;
+  }
+
+  .fill {
+    position: absolute;
+    inset: 0 auto 0 0;
+    background: #9a82ff;
+    width: calc(var(--progress, 0) * 100%);
+    pointer-events: none;
+  }
+
+  .caption {
+    position: relative;
+  }
+}
+
+.toggle {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  border: 1px solid rgb(255 255 255 / 14%);
+  border-radius: 8px;
+  background: #23232a;
+  padding: 7px 10px;
+  color: #e9e9ee;
+  font-size: 12px;
+  user-select: none;
+
+  &:hover {
+    background: #2e2e37;
+  }
+
+  &:has(:checked) {
+    border-color: rgb(125 92 255 / 55%);
+    background: #2a2440;
+  }
+
+  &.is-off {
+    display: none;
+  }
+
+  input {
+    flex: none;
+    margin: 0;
+    width: 13px;
+    height: 13px;
+    accent-color: #7d5cff;
   }
 }
 
@@ -162,24 +213,6 @@ label {
 
 input[type='range'] {
   width: 100%;
-}
-
-progress {
-  appearance: none;
-  border: 0;
-  border-radius: 999px;
-  background: #292932;
-  width: 100%;
-  height: 6px;
-  overflow: hidden;
-
-  &::-webkit-progress-bar {
-    background: #292932;
-  }
-
-  &::-webkit-progress-value {
-    background: #7d5cff;
-  }
 }
 
 .file {

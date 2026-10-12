@@ -129,10 +129,6 @@ export function installCameraHook(state: SnapState, platformId: PlatformId) {
   let starting = false
 
   const toggle = () => {
-    if (!state.enabled) {
-      state.flash('snap is off')
-      return
-    }
     if (!state.active) {
       state.flash('no camera yet')
       return
@@ -160,7 +156,7 @@ export function installCameraHook(state: SnapState, platformId: PlatformId) {
     state.refresh()
   }
 
-  const wantMic = () => state.enabled && state.settings.snap && !!state.active
+  const wantMic = () => state.settings.snap && !!state.active
 
   const syncDetector = () => {
     if (!wantMic()) {

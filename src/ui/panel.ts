@@ -13,8 +13,28 @@ interface Status {
 
 const SVG_NS = 'http://www.w3.org/2000/svg'
 const EDGE = 8
+const GAP = 8
 const DRAG_SLOP = 4
 const PANEL_WIDTH = 230
+
+function toggleOf(text: string) {
+  const label = document.createElement('label')
+  label.className = 'toggle'
+  const box = document.createElement('input')
+  box.type = 'checkbox'
+  const caption = document.createElement('span')
+  caption.textContent = text
+  label.append(box, caption)
+  return { box, label }
+}
+
+function vanishOf(state: SnapState) {
+  if (state.active?.lagRecording) return { progress: state.active.lagProgress, text: 'Recording' }
+  if (state.mode === 'out') return { progress: state.t, text: 'Vanishing' }
+  if (state.mode === 'gone') return { progress: 1, text: 'Return' }
+  if (state.mode === 'in') return { progress: 1 - state.t, text: 'Returning' }
+  return { progress: 0, text: 'Vanish' }
+}
 
 function sheetOf(css: string) {
   const sheet = new CSSStyleSheet()
@@ -58,12 +78,15 @@ export function mountPanel(state: SnapState, toggle: () => void) {
   const vanish = document.createElement('button')
   vanish.type = 'button'
   vanish.className = 'is-main'
-  vanish.textContent = 'vanish / return'
-  const pause = document.createElement('button')
-  pause.type = 'button'
+  const vanishFill = document.createElement('span')
+  vanishFill.className = 'fill'
+  const vanishText = document.createElement('span')
+  vanishText.className = 'caption'
+  vanish.append(vanishFill, vanishText)
+  const pause = toggleOf('snap trigger')
   const row = document.createElement('div')
   row.className = 'row'
-  row.append(vanish, pause)
+  row.append(vanish, pause.label)
 
   const effect = document.createElement('select')
   for (const id of effectList) {
@@ -74,8 +97,7 @@ export function mountPanel(state: SnapState, toggle: () => void) {
   }
   effect.value = state.settings.effect
 
-  const lagReverse = document.createElement('button')
-  lagReverse.type = 'button'
+  const lagReverse = toggleOf('reverse repeat')
   const lagDuration = document.createElement('input')
   lagDuration.type = 'range'
   lagDuration.min = String(LAG_MIN_MS)
@@ -85,13 +107,6 @@ export function mountPanel(state: SnapState, toggle: () => void) {
   const lagDurationText = document.createTextNode('')
   const lagDurationLabel = document.createElement('label')
   lagDurationLabel.append(lagDurationText, lagDuration)
-  const lagProgress = document.createElement('progress')
-  lagProgress.max = 1
-  lagProgress.value = 0
-  const lagProgressText = document.createTextNode('')
-  const lagProgressLabel = document.createElement('label')
-  lagProgressLabel.className = 'lag-progress is-off'
-  lagProgressLabel.append(lagProgressText, lagProgress)
 
   const capture = document.createElement('button')
   capture.type = 'button'
@@ -123,14 +138,12 @@ export function mountPanel(state: SnapState, toggle: () => void) {
   const durationLabel = document.createElement('label')
   durationLabel.append(durationText, duration)
 
-  const power = document.createElement('button')
-  power.type = 'button'
   const hint = document.createElement('div')
   hint.className = 'hint'
   hint.textContent = 'Step out, capture or upload the room, then snap. Cmd or Ctrl + Shift + X vanishes. Alt + Shift + P pauses the snap. Cmd or Ctrl + Shift + H hides this.'
   const panel = document.createElement('div')
   panel.className = 'panel'
-  panel.append(row, effect, lagReverse, lagDurationLabel, lagProgressLabel, capture, upload, file, sensLabel, durationLabel, power, hint)
+  panel.append(row, effect, lagReverse.label, lagDurationLabel, capture, upload, file, sensLabel, durationLabel, hint)
   root.append(pill, panel)
 
   let open = false
@@ -147,7 +160,6 @@ export function mountPanel(state: SnapState, toggle: () => void) {
     if (performance.now() < flashUntil) return { text: flashMsg, tone: 'warn' }
     if (countdown > 0) return { text: `step out... ${countdown}`, tone: 'warn' }
     if (countdown < 0) return { text: 'saving the room...', tone: 'warn' }
-    if (!state.enabled) return { text: 'snap off', tone: '' }
     if (!state.active) return { text: 'waiting for camera', tone: '' }
     if (state.active.lagRecording) {
       return { text: `recording lag ${Math.round(state.active.lagProgress * 100)}%`, tone: 'warn' }
@@ -168,8 +180,42 @@ export function mountPanel(state: SnapState, toggle: () => void) {
     const styleLeft = Number.parseFloat(style.left)
     const styleTop = Number.parseFloat(style.top)
     if (!Number.isFinite(styleLeft) || !Number.isFinite(styleTop)) return null
-    const x = Math.min(Math.max(EDGE, window.innerWidth - rect.width - EDGE), Math.max(EDGE, viewportLeft))
-    const y = Math.min(Math.max(EDGE, window.innerHeight - rect.height - EDGE), Math.max(EDGE, viewportTop))
+
+    const pillW = rect.width
+    const pillH = rect.height
+    const panelW = open ? (panel.offsetWidth || PANEL_WIDTH) : pillW
+    const panelH = open ? panel.offsetHeight : 0
+    const extra = panelH > 0 ? panelH + GAP : 0
+    const spaceBelow = window.innerHeight - (viewportTop + pillH)
+    const spaceAbove = viewportTop
+    const isUp = extra > 0 && spaceBelow < extra + EDGE && spaceAbove > spaceBelow
+    const overflowRight = viewportLeft + Math.max(pillW, panelW) > window.innerWidth - EDGE
+    const fitsEnd = viewportLeft + pillW - panelW >= EDGE
+    const isEnd = extra > 0 && overflowRight && fitsEnd
+    host.classList.toggle('is-up', isUp)
+    host.classList.toggle('is-end', isEnd)
+
+    let minX = EDGE
+    let maxX = window.innerWidth - pillW - EDGE
+    let minY = EDGE
+    let maxY = window.innerHeight - pillH - EDGE
+    if (extra > 0) {
+      if (isUp) minY = Math.max(minY, EDGE + extra)
+      else maxY = Math.min(maxY, window.innerHeight - pillH - extra - EDGE)
+      if (isEnd) minX = Math.max(minX, EDGE + panelW - pillW)
+      else maxX = Math.min(maxX, window.innerWidth - panelW - EDGE)
+      if (minX > maxX) {
+        minX = EDGE
+        maxX = window.innerWidth - pillW - EDGE
+      }
+      if (minY > maxY) {
+        minY = EDGE
+        maxY = window.innerHeight - pillH - EDGE
+      }
+    }
+
+    const x = Math.min(maxX, Math.max(minX, viewportLeft))
+    const y = Math.min(maxY, Math.max(minY, viewportTop))
     host.style.left = `${x - (rect.left - styleLeft)}px`
     host.style.top = `${y - (rect.top - styleTop)}px`
     return { x, y }
@@ -177,15 +223,8 @@ export function mountPanel(state: SnapState, toggle: () => void) {
 
   const flip = () => {
     const rect = host.getBoundingClientRect()
-    const panelWidth = panel.offsetWidth || PANEL_WIDTH
-    const panelHeight = panel.offsetHeight
-    const needed = panelHeight + EDGE
-    const spaceBelow = window.innerHeight - rect.bottom
-    const spaceAbove = rect.top
-    const overflowRight = rect.left + panelWidth > window.innerWidth - EDGE
-    const fitsEnd = rect.right - panelWidth >= EDGE
-    host.classList.toggle('is-up', open && panelHeight > 0 && spaceBelow < needed + EDGE && spaceAbove >= needed + EDGE)
-    host.classList.toggle('is-end', overflowRight && fitsEnd)
+    if (rect.width === 0) return
+    place(rect.left, rect.top)
   }
 
   const settle = () => {
@@ -195,26 +234,22 @@ export function mountPanel(state: SnapState, toggle: () => void) {
     const left = x != null && y != null ? x : rect.left
     const top = x != null && y != null ? y : rect.top
     place(left, top)
-    flip()
   }
 
   const render = () => {
     const becameVisible = !hidden && host.classList.contains('is-hidden')
     host.classList.toggle('is-hidden', hidden)
     panel.classList.toggle('open', open)
-    pause.textContent = state.settings.snap ? 'pause snap' : 'snaps on'
-    power.textContent = state.enabled ? 'turn snap off' : 'turn snap on'
+    pause.box.checked = state.settings.snap
     durationText.data = `duration ${(Number(duration.value) / 1000).toFixed(1)}s `
     const lagOn = state.settings.effect === 'lag'
-    lagReverse.classList.toggle('is-off', !lagOn)
-    lagReverse.textContent = state.settings.lagReverse ? 'reverse repeat on' : 'reverse repeat off'
+    lagReverse.label.classList.toggle('is-off', !lagOn)
+    lagReverse.box.checked = state.settings.lagReverse
     lagDurationLabel.classList.toggle('is-off', !lagOn)
     lagDurationText.data = `record ${(Number(lagDuration.value) / 1000).toFixed(1)}s `
-    const lagRecording = !!state.active?.lagRecording
-    const lagValue = state.active?.lagProgress ?? 0
-    lagProgressLabel.classList.toggle('is-off', !lagRecording)
-    lagProgress.value = lagValue
-    lagProgressText.data = `recording ${Math.round(lagValue * 100)}%`
+    const vanishState = vanishOf(state)
+    vanishText.textContent = vanishState.text
+    vanish.style.setProperty('--progress', String(vanishState.progress))
     const next = readStatus()
     dot.className = next.tone ? `dot ${next.tone}` : 'dot'
     status.textContent = next.text
@@ -316,7 +351,7 @@ export function mountPanel(state: SnapState, toggle: () => void) {
   state.onFrame = () => {
     checkFlip()
     const now = performance.now()
-    const refreshMs = state.active?.lagRecording ? 50 : 250
+    const refreshMs = state.active?.lagRecording || state.mode === 'out' || state.mode === 'in' ? 50 : 250
     if (now - lastFrame <= refreshMs) return
     lastFrame = now
     render()
@@ -366,7 +401,6 @@ export function mountPanel(state: SnapState, toggle: () => void) {
     drag.moved = true
     grip.classList.add('is-dragging')
     place(drag.left + dx, drag.top + dy)
-    flip()
   })
   const finishDrag = (event: PointerEvent) => {
     if (!drag || drag.id !== event.pointerId) return
@@ -387,8 +421,8 @@ export function mountPanel(state: SnapState, toggle: () => void) {
   grip.addEventListener('pointerup', finishDrag)
   grip.addEventListener('pointercancel', finishDrag)
   vanish.addEventListener('click', toggle)
-  pause.addEventListener('click', () => {
-    state.settings.snap = !state.settings.snap
+  pause.box.addEventListener('change', () => {
+    state.settings.snap = pause.box.checked
     save()
   })
   effect.addEventListener('change', () => {
@@ -397,8 +431,8 @@ export function mountPanel(state: SnapState, toggle: () => void) {
     state.settings.effect = next as typeof state.settings.effect
     save()
   })
-  lagReverse.addEventListener('click', () => {
-    state.settings.lagReverse = !state.settings.lagReverse
+  lagReverse.box.addEventListener('change', () => {
+    state.settings.lagReverse = lagReverse.box.checked
     save()
   })
   lagDuration.addEventListener('input', () => {
@@ -423,15 +457,6 @@ export function mountPanel(state: SnapState, toggle: () => void) {
     state.settings.duration = Number.parseFloat(duration.value)
     writeSettings(state.settings)
     render()
-  })
-  power.addEventListener('click', () => {
-    state.enabled = !state.enabled
-    state.settings.enabled = state.enabled
-    if (!state.enabled) {
-      state.mode = 'live'
-      for (const pipe of state.pipes) pipe.parts.length = 0
-    }
-    save()
   })
 
   window.addEventListener('keydown', (event) => {

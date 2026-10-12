@@ -29,7 +29,6 @@ export interface SnapState {
   bgVer: number
   dur: number
   effect: EffectId
-  enabled: boolean
   flash: (message: string) => void
   mode: SnapMode
   onChange: (() => void) | null
@@ -56,7 +55,6 @@ export function createState(): SnapState {
     bgVer: 0,
     dur: settings.duration,
     effect: settings.effect,
-    enabled: settings.enabled,
     flash: () => {},
     mode: 'live',
     onChange: null,

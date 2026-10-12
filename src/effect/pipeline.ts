@@ -730,11 +730,11 @@ export class Pipeline implements EffectHost {
     }
     if (sh.bg && this.bgVer !== sh.bgVer) this.syncBg()
     const q = tick(sh, now)
-    const freeze = sh.enabled && sh.effect === 'freeze' && sh.mode !== 'live'
-    const lag = sh.enabled && sh.effect === 'lag' && sh.mode !== 'live'
+    const freeze = sh.effect === 'freeze' && sh.mode !== 'live'
+    const lag = sh.effect === 'lag' && sh.mode !== 'live'
     if (!freeze) this.holdReady = false
     const lagStep = this.updateLag(now, lag)
-    const active = sh.enabled && (skipsBackground(sh.effect) || !!sh.bg) && sh.mode !== 'live'
+    const active = (skipsBackground(sh.effect) || !!sh.bg) && sh.mode !== 'live'
     if (this.renderer) {
       const amount = active ? ease(q) : 0
       this.renderer.render({

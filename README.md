@@ -24,7 +24,7 @@ Another Jitsi host is one entry in [`src/platforms/registry.ts`](src/platforms/r
 
 1. Open a room and allow camera and microphone access when the browser asks. Do this on the prejoin preview, before you join.
 2. A small dark pill appears in the top left. Click it. Everything is controlled from there:
-   - **Turn snap off** — the camera goes to the call untouched and the mic is released. Press `turn snap on` to come back.
+   - **Vanish** — the purple button. **Vanish** while you are live, **Vanishing** while the effect plays, **Return** when you are gone, **Returning** on the way back. The fill inside the button is the progress. With Lag it shows **Recording** while the clip is sampled.
    - **Background** — most vanish effects need to know what's behind you. Either:
      - **Capture empty room**: press it, step out of frame, and wait for the beep. The countdown is 5 seconds by default (stored with the other settings; there is no slider for it).
      - **Upload background**: if you use a macOS camera background (Control Center → Video Effects → Background), upload the same picture. The camera then already shows you on top of a known image, so the cut-out is clean and you never need to leave the frame. Snap figures out on its own if the picture needs to be mirrored.
@@ -33,7 +33,7 @@ Another Jitsi host is one entry in [`src/platforms/registry.ts`](src/platforms/r
    - **Duration** — how long the vanish takes. Lag has its own **record** slider for how long to sample after the snap, and **reverse repeat** for ping-pong playback.
 3. Snap your fingers (a normal, sharp snap) to vanish. Snap again to come back. You can snap as many times as you like, and snapping mid-way turns the effect around.
 
-**Pause snap** — the button next to Vanish, or `Alt`/`Option` `+ Shift + P`, stops listening for snaps, so nothing fires by mistake while you talk, type or clap. The mic is released, the pill shows `armed, snap paused`, and `vanish / return` plus `Cmd`/`Ctrl` `+ Shift + X` still work. Press it again to resume.
+**Snap trigger** — the checkbox next to Vanish, or `Alt`/`Option` `+ Shift + P`, stops listening for snaps, so nothing fires by mistake while you talk, type or clap. The mic is released, the pill shows `armed, snap paused`, and the Vanish button plus `Cmd`/`Ctrl` `+ Shift + X` still work. Press it again to resume.
 
 `Cmd`/`Ctrl` `+ Shift + H` hides the pill.
 
@@ -50,7 +50,7 @@ Turning the camera off and on again keeps the saved room. Everyone in the call s
 | Portal | You spin and shrink into a purple vortex that closes behind you |
 | Hedge | The Homer Simpson ("Homer Loves Flanders", 1994): you step back while two hedges slide in from the left and the right in front of you, swaying. They close with a rustle and a burst of leaves, then part again and you're gone. Coming back is Homer stepping out of the hedge |
 | Freeze | Holds the whole outgoing camera frame on the snap. You can walk out of shot and come back to the same still picture. Snap again to unfreeze. No empty-room capture. |
-| Lag | After the snap, records live camera for the chosen **record** time (0.2–2.0 s, ~15 fps) while the call still sees you live. The pill shows `recording lag 42%`. Then that clip loops at the recorded pace: **reverse repeat off** is start → end → start; **on** is ping-pong start → end → start → end, with no jump at the turn. Snap again to go live. No empty-room capture. |
+| Lag | After the snap, records live camera for the chosen **record** time (0.2–2.0 s, ~15 fps) while the call still sees you live. The Vanish button shows **Recording** and fills with progress. Then that clip loops at the recorded pace: **reverse repeat off** is start → end → start; **on** is ping-pong start → end → start → end, with no jump at the turn. Snap again to go live. No empty-room capture. |
 
 ## Troubleshooting
 

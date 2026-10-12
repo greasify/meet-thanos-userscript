@@ -9,7 +9,6 @@ export interface SnapSettings {
   countdown: number
   duration: number
   effect: EffectId
-  enabled: boolean
   lagDuration: number
   lagReverse: boolean
   pill: boolean
@@ -29,7 +28,6 @@ export const DEFAULT_SETTINGS: SnapSettings = {
   countdown: 5,
   duration: 2000,
   effect: 'dust',
-  enabled: true,
   lagDuration: 500,
   lagReverse: false,
   pill: true,
@@ -71,7 +69,6 @@ export function readSettings(): SnapSettings {
       countdown: clamp({ fallback: DEFAULT_SETTINGS.countdown, max: 15, min: 1, value: Number(parsed.countdown) }),
       duration: clamp({ fallback: DEFAULT_SETTINGS.duration, max: 6000, min: 500, value: Number(parsed.duration) }),
       effect: isEffect(parsed.effect) ? parsed.effect : DEFAULT_SETTINGS.effect,
-      enabled: parsed.enabled !== false,
       lagDuration: clamp({ fallback: DEFAULT_SETTINGS.lagDuration, max: LAG_MAX_MS, min: LAG_MIN_MS, value: Number(parsed.lagDuration) }),
       lagReverse: parsed.lagReverse === true,
       pill: parsed.pill !== false,
