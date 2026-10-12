@@ -1,5 +1,6 @@
 import type { SnapState } from '../state'
-import { effectList, effects, LAG_MAX_MS, LAG_MIN_MS } from '../effect/effects'
+import { effectList, effects, skipsBackground } from '../effect/effects'
+import { LAG_MAX_MS, LAG_MIN_MS } from '../effect/lag'
 import { setSensitivity } from '../snap/detector'
 import { writeBg, writeSettings } from '../snap/settings'
 import { rememberBg } from '../state'
@@ -75,8 +76,6 @@ export function mountPanel(state: SnapState, toggle: () => void) {
 
   const lagReverse = document.createElement('button')
   lagReverse.type = 'button'
-  const lagLoop = document.createElement('button')
-  lagLoop.type = 'button'
   const lagDuration = document.createElement('input')
   lagDuration.type = 'range'
   lagDuration.min = String(LAG_MIN_MS)
@@ -86,6 +85,13 @@ export function mountPanel(state: SnapState, toggle: () => void) {
   const lagDurationText = document.createTextNode('')
   const lagDurationLabel = document.createElement('label')
   lagDurationLabel.append(lagDurationText, lagDuration)
+  const lagProgress = document.createElement('progress')
+  lagProgress.max = 1
+  lagProgress.value = 0
+  const lagProgressText = document.createTextNode('')
+  const lagProgressLabel = document.createElement('label')
+  lagProgressLabel.className = 'lag-progress is-off'
+  lagProgressLabel.append(lagProgressText, lagProgress)
 
   const capture = document.createElement('button')
   capture.type = 'button'
@@ -124,7 +130,7 @@ export function mountPanel(state: SnapState, toggle: () => void) {
   hint.textContent = 'Step out, capture or upload the room, then snap. Cmd or Ctrl + Shift + X vanishes. Alt + Shift + P pauses the snap. Cmd or Ctrl + Shift + H hides this.'
   const panel = document.createElement('div')
   panel.className = 'panel'
-  panel.append(row, effect, lagReverse, lagLoop, lagDurationLabel, capture, upload, file, sensLabel, durationLabel, power, hint)
+  panel.append(row, effect, lagReverse, lagDurationLabel, lagProgressLabel, capture, upload, file, sensLabel, durationLabel, power, hint)
   root.append(pill, panel)
 
   let open = false
@@ -143,7 +149,11 @@ export function mountPanel(state: SnapState, toggle: () => void) {
     if (countdown < 0) return { text: 'saving the room...', tone: 'warn' }
     if (!state.enabled) return { text: 'snap off', tone: '' }
     if (!state.active) return { text: 'waiting for camera', tone: '' }
-    if (!state.bg) return { text: 'set a background', tone: 'warn' }
+    if (state.active.lagRecording) {
+      return { text: `recording lag ${Math.round(state.active.lagProgress * 100)}%`, tone: 'warn' }
+    }
+    const activeEffect = state.mode === 'live' ? state.settings.effect : state.effect
+    if (!state.bg && !skipsBackground(activeEffect)) return { text: 'set a background', tone: 'warn' }
     if (state.mode === 'gone') return { text: 'vanished', tone: 'gone' }
     if (state.mode === 'out') return { text: 'vanishing', tone: '' }
     if (state.mode === 'in') return { text: 'returning', tone: '' }
@@ -197,11 +207,14 @@ export function mountPanel(state: SnapState, toggle: () => void) {
     durationText.data = `duration ${(Number(duration.value) / 1000).toFixed(1)}s `
     const lagOn = state.settings.effect === 'lag'
     lagReverse.classList.toggle('is-off', !lagOn)
-    lagReverse.textContent = state.settings.lagReverse ? 'reverse on' : 'reverse off'
-    lagLoop.classList.toggle('is-off', !lagOn)
-    lagLoop.textContent = state.settings.lagLoop ? 'loop on' : 'loop off'
+    lagReverse.textContent = state.settings.lagReverse ? 'reverse repeat on' : 'reverse repeat off'
     lagDurationLabel.classList.toggle('is-off', !lagOn)
     lagDurationText.data = `record ${(Number(lagDuration.value) / 1000).toFixed(1)}s `
+    const lagRecording = !!state.active?.lagRecording
+    const lagValue = state.active?.lagProgress ?? 0
+    lagProgressLabel.classList.toggle('is-off', !lagRecording)
+    lagProgress.value = lagValue
+    lagProgressText.data = `recording ${Math.round(lagValue * 100)}%`
     const next = readStatus()
     dot.className = next.tone ? `dot ${next.tone}` : 'dot'
     status.textContent = next.text
@@ -303,7 +316,8 @@ export function mountPanel(state: SnapState, toggle: () => void) {
   state.onFrame = () => {
     checkFlip()
     const now = performance.now()
-    if (now - lastFrame <= 250) return
+    const refreshMs = state.active?.lagRecording ? 50 : 250
+    if (now - lastFrame <= refreshMs) return
     lastFrame = now
     render()
   }
@@ -385,10 +399,6 @@ export function mountPanel(state: SnapState, toggle: () => void) {
   })
   lagReverse.addEventListener('click', () => {
     state.settings.lagReverse = !state.settings.lagReverse
-    save()
-  })
-  lagLoop.addEventListener('click', () => {
-    state.settings.lagLoop = !state.settings.lagLoop
     save()
   })
   lagDuration.addEventListener('input', () => {

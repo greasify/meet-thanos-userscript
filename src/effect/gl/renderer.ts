@@ -1,5 +1,4 @@
 import type { EffectId } from '../effects'
-import { LAG_MAX_FRAMES, lagFrameAt, lagPlan } from '../effects'
 import {
   BLUR_FRAGMENT_SHADER,
   EFFECT_FRAGMENT_SHADER,
@@ -38,9 +37,10 @@ export interface GlRenderFrame {
   e: number
   effect: EffectId
   gone: boolean
-  lagDuration: number
-  lagLoop: boolean
-  lagReverse: boolean
+  lag: {
+    captureIndex: number | null
+    playbackIndex: number | null
+  } | null
   /** Time in seconds. */
   time: number
   vanishing: boolean
@@ -214,11 +214,8 @@ export class GlRenderer {
   private readonly gpuPending: WebGLQuery[] = []
   private readonly gpuTimes: number[] = []
   private readonly height: number
-  private lagCount = 0
-  private lagInterval = 0
-  private lagLastSample = 0
-  private lagLimit = 0
-  private lagPlayAt = 0
+  private readonly lagCapture: HTMLCanvasElement
+  private readonly lagCaptureCtx: CanvasRenderingContext2D
   private readonly maskHeight: number
   private readonly maskWidth: number
   private readonly particleCount: number
@@ -236,6 +233,13 @@ export class GlRenderer {
     this.maskHeight = Math.max(2, Math.round(this.maskWidth * this.height / this.width))
     this.particleCount = Math.max(1, Math.round(options.particleCount ?? DEFAULT_PARTICLE_COUNT))
     this.diffThreshold = options.diffThreshold ?? DEFAULT_DIFF_THRESHOLD
+
+    this.lagCapture = document.createElement('canvas')
+    this.lagCapture.width = this.width
+    this.lagCapture.height = this.height
+    const lagCaptureCtx = this.lagCapture.getContext('2d')
+    if (!lagCaptureCtx) throw new Error('Unable to create Lag capture context')
+    this.lagCaptureCtx = lagCaptureCtx
 
     this.canvas = document.createElement('canvas')
     this.canvas.width = this.width
@@ -281,25 +285,17 @@ export class GlRenderer {
     const { gl, resources } = this
     const active = frame.active && this.backgroundReady
     const hold = frame.active && frame.effect === 'freeze'
-    const lag = frame.active && frame.effect === 'lag'
-    if (!lag) {
-      this.lagCount = 0
-      this.lagInterval = 0
-      this.lagLastSample = 0
-      this.lagLimit = 0
-      this.lagPlayAt = 0
-    } else if (this.lagLimit === 0) {
-      const plan = lagPlan(frame.lagDuration)
-      this.lagInterval = plan.interval
-      this.lagLimit = plan.frames
-    }
-    const capturing = lag && this.lagCount < this.lagLimit
+    const lag = frame.active && frame.effect === 'lag' ? frame.lag : null
+    const played = lag?.playbackIndex != null
+      ? resources.lagTextures[lag.playbackIndex]
+      : undefined
+    const playingLag = !!played
     this.pollGpuQueries()
     const query = this.gpuExt ? gl.createQuery() : null
     if (query && this.gpuExt) gl.beginQuery(this.gpuExt.TIME_ELAPSED_EXT, query)
     gl.disable(gl.BLEND)
     gl.disable(gl.DEPTH_TEST)
-    const shouldUpload = hold ? !this.videoHeld : (capturing || (!lag && (!active || !frame.gone)))
+    const shouldUpload = hold ? !this.videoHeld : (!playingLag && (!active || !frame.gone || !!lag))
     if (shouldUpload) {
       gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true)
       gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false)
@@ -314,20 +310,11 @@ export class GlRenderer {
       }
     }
     this.videoHeld = hold
-    const stamp = frame.time * 1000
-    if (capturing && (this.lagCount === 0 || stamp - this.lagLastSample >= this.lagInterval)) {
-      this.rememberLagFrame(frame.video, stamp)
-    }
-    const played = lag && this.lagLimit > 0 && this.lagCount >= this.lagLimit
-      ? resources.lagTextures[lagFrameAt(stamp - this.lagPlayAt, this.lagCount, {
-        loop: frame.lagLoop,
-        reverse: frame.lagReverse,
-      })]
-      : undefined
+    if (lag?.captureIndex != null) this.captureLagFrame(lag.captureIndex, frame.video)
 
-    if (active && !frame.gone && !hold && !lag) this.renderMask()
+    if (active && !frame.gone && !hold && !frame.lag) this.renderMask()
     this.renderEffect(frame, active, played ?? resources.videoTexture)
-    if (active && !frame.gone && !hold && !lag && this.hasParticles(frame.effect)) this.renderParticles(frame)
+    if (active && !frame.gone && !hold && !frame.lag && this.hasParticles(frame.effect)) this.renderParticles(frame)
     if (query && this.gpuExt) {
       gl.endQuery(this.gpuExt.TIME_ELAPSED_EXT)
       this.gpuPending.push(query)
@@ -363,11 +350,6 @@ export class GlRenderer {
     this.videoHeight = 0
     this.videoHeld = false
     this.videoWidth = 0
-    this.lagCount = 0
-    this.lagInterval = 0
-    this.lagLastSample = 0
-    this.lagLimit = 0
-    this.lagPlayAt = 0
   }
 
   private readonly onContextRestored = () => {
@@ -419,9 +401,6 @@ export class GlRenderer {
     }
     const videoTexture = createTexture(gl, { ...rgba, height: 1, width: 1 })
     const lagTextures: WebGLTexture[] = []
-    for (let index = 0; index < LAG_MAX_FRAMES; index++) {
-      lagTextures.push(createTexture(gl, { ...rgba, height: 1, width: 1 }))
-    }
     const backgroundUploadTexture = createTexture(gl, { ...rgba, height: 1, width: 1 })
     const backgroundTexture = createTexture(gl, rgba)
     const maskATexture = createTexture(gl, mask)
@@ -462,11 +441,6 @@ export class GlRenderer {
     this.videoHeight = 0
     this.videoHeld = false
     this.videoWidth = 0
-    this.lagCount = 0
-    this.lagInterval = 0
-    this.lagLastSample = 0
-    this.lagLimit = 0
-    this.lagPlayAt = 0
   }
 
   private uploadBackground(source: CanvasImageSource, size: { height: number, width: number }) {
@@ -528,18 +502,26 @@ export class GlRenderer {
     this.drawFullscreen()
   }
 
-  private readonly rememberLagFrame = (video: HTMLVideoElement, stamp: number) => {
+  private readonly captureLagFrame = (index: number, video: HTMLVideoElement) => {
     const resources = this.resources
-    const texture = resources?.lagTextures[this.lagCount]
-    if (!resources || !texture) return
+    if (!resources) return
     const { gl } = this
+    let texture = resources.lagTextures[index]
+    if (!texture) {
+      texture = createTexture(gl, {
+        filter: gl.LINEAR,
+        format: gl.RGBA,
+        height: 1,
+        internalFormat: gl.RGBA8,
+        width: 1,
+      })
+      resources.lagTextures[index] = texture
+    }
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true)
     gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false)
     gl.bindTexture(gl.TEXTURE_2D, texture)
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, video)
-    this.lagLastSample = stamp
-    this.lagCount += 1
-    if (this.lagCount >= this.lagLimit) this.lagPlayAt = stamp
+    this.lagCaptureCtx.drawImage(video, 0, 0, this.width, this.height)
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, this.lagCapture)
   }
 
   private renderEffect(frame: GlRenderFrame, active: boolean, video: WebGLTexture) {

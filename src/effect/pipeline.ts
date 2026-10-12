@@ -1,7 +1,9 @@
 import type { SnapState } from '../state'
 import type { EffectHost, ParticleKind, SpawnSpec } from './effects'
-import { ease, effects, lagFrameAt, lagPlan, skipsBackground } from './effects'
+import type { LagStep, LagTimeline } from './lag'
+import { ease, effects, skipsBackground } from './effects'
 import { GlRenderer } from './gl/renderer'
+import { advanceLagTimeline, createLagTimeline } from './lag'
 
 const WORK_W = 320
 const EMPTY_PIXELS = new Uint8ClampedArray()
@@ -175,12 +177,10 @@ export class Pipeline implements EffectHost {
   holdCtx: CanvasRenderingContext2D
   holdReady = false
   labels: Int32Array
-  lagCount = 0
-  lagInterval = 0
-  lagLastSample = 0
-  lagLimit = 0
-  lagPlayAt = 0
+  lagProgress = 0
+  lagRecording = false
   lagSlots: HTMLCanvasElement[] = []
+  lagTimeline: LagTimeline | null = null
   last = performance.now()
   layer: HTMLCanvasElement
   layerCtx: CanvasRenderingContext2D
@@ -708,20 +708,14 @@ export class Pipeline implements EffectHost {
     const ctx = this.ctx
     if (sh.active && sh.active !== this) {
       if (sh.mode === 'live' || sh.effect !== 'freeze') this.holdReady = false
-      if (sh.mode === 'live' || sh.effect !== 'lag') {
-        this.lagCount = 0
-        this.lagInterval = 0
-        this.lagLimit = 0
-      }
+      this.resetLag()
       if (this.renderer) {
         this.renderer.render({
           active: false,
           e: 0,
           effect: sh.effect,
           gone: false,
-          lagDuration: sh.settings.lagDuration,
-          lagLoop: sh.settings.lagLoop,
-          lagReverse: sh.settings.lagReverse,
+          lag: null,
           time: now / 1000,
           vanishing: false,
           video: v,
@@ -739,15 +733,7 @@ export class Pipeline implements EffectHost {
     const freeze = sh.enabled && sh.effect === 'freeze' && sh.mode !== 'live'
     const lag = sh.enabled && sh.effect === 'lag' && sh.mode !== 'live'
     if (!freeze) this.holdReady = false
-    if (!lag) {
-      this.lagCount = 0
-      this.lagInterval = 0
-      this.lagLimit = 0
-    } else if (this.lagLimit === 0) {
-      const plan = lagPlan(sh.settings.lagDuration)
-      this.lagInterval = plan.interval
-      this.lagLimit = plan.frames
-    }
+    const lagStep = this.updateLag(now, lag)
     const active = sh.enabled && (skipsBackground(sh.effect) || !!sh.bg) && sh.mode !== 'live'
     if (this.renderer) {
       const amount = active ? ease(q) : 0
@@ -756,9 +742,12 @@ export class Pipeline implements EffectHost {
         e: amount,
         effect: sh.effect,
         gone: sh.mode === 'gone',
-        lagDuration: sh.settings.lagDuration,
-        lagLoop: sh.settings.lagLoop,
-        lagReverse: sh.settings.lagReverse,
+        lag: lagStep
+          ? {
+              captureIndex: lagStep.captureIndex,
+              playbackIndex: lagStep.playbackIndex,
+            }
+          : null,
         time: now / 1000,
         vanishing: sh.mode === 'out',
         video: v,
@@ -768,7 +757,7 @@ export class Pipeline implements EffectHost {
       if (sh.onFrame && sh.active === this) sh.onFrame()
       return
     }
-    if (!active) {
+    if (!active || (lag && !lagStep)) {
       ctx.drawImage(v, 0, 0, this.W, this.H)
       this.prevE = null
     } else if (freeze) {
@@ -787,15 +776,12 @@ export class Pipeline implements EffectHost {
       this.parts.length = 0
       if (sh.onFrame && sh.active === this) sh.onFrame()
       return
-    } else if (lag) {
-      if (this.lagCount < this.lagLimit) {
+    } else if (lagStep) {
+      if (lagStep.recording) {
         ctx.drawImage(v, 0, 0, this.W, this.H)
-        if (this.lagCount === 0 || now - this.lagLastSample >= this.lagInterval) this.keepLagSlot(v, now)
+        if (lagStep.captureIndex != null) this.keepLagSlot(v, lagStep.captureIndex)
       } else {
-        const slot = this.lagSlots[lagFrameAt(now - this.lagPlayAt, this.lagCount, {
-          loop: sh.settings.lagLoop,
-          reverse: sh.settings.lagReverse,
-        })]
+        const slot = lagStep.playbackIndex == null ? null : this.lagSlots[lagStep.playbackIndex]
         if (slot) this.holdCtx.drawImage(slot, 0, 0, this.W, this.H)
         effects.lag.render(this, {
           d: this.framePx ?? EMPTY_PIXELS,
@@ -820,18 +806,40 @@ export class Pipeline implements EffectHost {
     if (sh.onFrame && sh.active === this) sh.onFrame()
   }
 
-  private readonly keepLagSlot = (video: HTMLVideoElement, stamp: number) => {
-    let slot = this.lagSlots[this.lagCount]
+  private readonly keepLagSlot = (video: HTMLVideoElement, index: number) => {
+    let slot = this.lagSlots[index]
     if (!slot) {
       slot = makeCanvas(this.W, this.H)
-      this.lagSlots[this.lagCount] = slot
+      this.lagSlots[index] = slot
     }
     const slotCtx = slot.getContext('2d')
     if (!slotCtx) return
     slotCtx.drawImage(video, 0, 0, this.W, this.H)
-    this.lagCount += 1
-    this.lagLastSample = stamp
-    if (this.lagCount >= this.lagLimit) this.lagPlayAt = stamp
+  }
+
+  private readonly resetLag = () => {
+    this.lagProgress = 0
+    this.lagRecording = false
+    this.lagTimeline = null
+  }
+
+  private readonly updateLag = (now: number, active: boolean): LagStep | null => {
+    if (!active) {
+      this.resetLag()
+      return null
+    }
+    if (this.sh.mode === 'in' && this.lagTimeline?.playbackAt == null) {
+      this.resetLag()
+      return null
+    }
+    if (!this.lagTimeline) {
+      if (this.sh.mode !== 'out') return null
+      this.lagTimeline = createLagTimeline(now, this.sh.settings.lagDuration)
+    }
+    const step = advanceLagTimeline(this.lagTimeline, now, this.sh.settings.lagReverse)
+    this.lagProgress = step.progress
+    this.lagRecording = step.recording
+    return step
   }
 
   private stepParticle(p: Particle, dt: number) {

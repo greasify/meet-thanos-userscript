@@ -11,6 +11,8 @@ export interface CameraPipeline {
   W: number
   canvas: HTMLCanvasElement
   dead: boolean
+  readonly lagProgress: number
+  readonly lagRecording: boolean
   parts: { length: number }
   video: HTMLVideoElement
   captureBg: () => Promise<HTMLCanvasElement>
