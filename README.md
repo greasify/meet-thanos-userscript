@@ -1,6 +1,6 @@
 # Meet Thanos
 
-Snap your fingers and vanish from your own video in Google Meet, Jitsi and Yandex Telemost. You stay in the call, your picture dissolves (6 effects to choose from) and leaves an empty room behind, until you snap again.
+Snap your fingers and vanish from your own video in Google Meet, Jitsi and Yandex Telemost. You stay in the call, your picture dissolves (8 effects to choose from) and leaves an empty room behind, until you snap again.
 
 Everything runs locally in your browser: no video or audio is ever sent anywhere, and it works offline (aside from the call itself).
 
@@ -25,12 +25,12 @@ Another Jitsi host is one entry in [`src/platforms/registry.ts`](src/platforms/r
 1. Open a room and allow camera and microphone access when the browser asks. Do this on the prejoin preview, before you join.
 2. A small dark pill appears in the top left. Click it. Everything is controlled from there:
    - **Turn snap off** — the camera goes to the call untouched and the mic is released. Press `turn snap on` to come back.
-   - **Background** — Snap needs to know what's behind you. Either:
+   - **Background** — most vanish effects need to know what's behind you. Either:
      - **Capture empty room**: press it, step out of frame, and wait for the beep. The countdown is 5 seconds by default (stored with the other settings; there is no slider for it).
      - **Upload background**: if you use a macOS camera background (Control Center → Video Effects → Background), upload the same picture. The camera then already shows you on top of a known image, so the cut-out is clean and you never need to leave the frame. Snap figures out on its own if the picture needs to be mirrored.
      The background is saved in the userscript manager, so it survives reloads and is the same on Meet, Jitsi and Telemost.
-   - **Effect** — pick one of 6.
-   - **Duration** — how long the vanish takes.
+   - **Effect** — pick one of 8. Freeze and Lag skip the empty-room capture: they hold the camera itself, so no background is required.
+   - **Duration** — how long the vanish takes. Lag has its own **record** slider for how long to sample after the snap, and **reverse repeat** for ping-pong playback.
 3. Snap your fingers (a normal, sharp snap) to vanish. Snap again to come back. You can snap as many times as you like, and snapping mid-way turns the effect around.
 
 **Pause snap** — the button next to Vanish, or `Alt`/`Option` `+ Shift + P`, stops listening for snaps, so nothing fires by mistake while you talk, type or clap. The mic is released, the pill shows `armed, snap paused`, and `vanish / return` plus `Cmd`/`Ctrl` `+ Shift + X` still work. Press it again to resume.
@@ -49,6 +49,8 @@ Turning the camera off and on again keeps the saved room. Everyone in the call s
 | Melt | You drip down like wax |
 | Portal | You spin and shrink into a purple vortex that closes behind you |
 | Hedge | The Homer Simpson ("Homer Loves Flanders", 1994): you step back while two hedges slide in from the left and the right in front of you, swaying. They close with a rustle and a burst of leaves, then part again and you're gone. Coming back is Homer stepping out of the hedge |
+| Freeze | Holds the whole outgoing camera frame on the snap. You can walk out of shot and come back to the same still picture. Snap again to unfreeze. No empty-room capture. |
+| Lag | After the snap, records live camera for the chosen **record** time (0.2–2.0 s, ~15 fps) while the call still sees you live. The pill shows `recording lag 42%`. Then that clip loops at the recorded pace: **reverse repeat off** is start → end → start; **on** is ping-pong start → end → start → end, with no jump at the turn. Snap again to go live. No empty-room capture. |
 
 ## Troubleshooting
 
