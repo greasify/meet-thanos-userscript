@@ -13,7 +13,7 @@ function sourceOf(video: boolean | MediaTrackConstraints) {
   return legacy.chromeMediaSource ?? legacy.mandatory?.chromeMediaSource
 }
 
-/** Meet and Telemost grab the display through `getDisplayMedia`, not `getUserMedia`. */
+/** Meet, Telemost and Zoom grab the display through `getDisplayMedia`, not `getUserMedia`. */
 export function hasVideoTrack(constraints?: MediaStreamConstraints) {
   return Boolean(constraints?.video)
 }
@@ -33,6 +33,7 @@ const checks: Record<PlatformId, (constraints?: MediaStreamConstraints) => boole
   'google-meet': hasVideoTrack,
   'jitsi': isJitsiCameraRequest,
   'telemost': hasVideoTrack,
+  'zoom': hasVideoTrack,
 }
 
 export function isCameraRequest(platformId: PlatformId, constraints?: MediaStreamConstraints) {

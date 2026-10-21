@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "private": true,
   "packageManager": "pnpm@11.25.0",
-  "description": "Snap your fingers and vanish from your own video in Google Meet, Jitsi and Yandex Telemost.",
+  "description": "Snap your fingers and vanish from your own video in Google Meet, Zoom, Jitsi and Yandex Telemost.",
   "scripts": {
     "dev": "vite",
     "build": "vite build",

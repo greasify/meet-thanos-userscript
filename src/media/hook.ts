@@ -4,6 +4,7 @@ import { effects, skipsBackground } from '../effect/effects'
 import { Pipeline, tick } from '../effect/pipeline'
 import { isCameraRequest } from '../platforms/camera'
 import { startSnapDetector } from '../snap/detector'
+import { toOpaqueVideoTrack } from './i420'
 
 function settingsOf(real: MediaStreamTrack, pipe: Pipeline): MediaTrackSettings {
   return {
@@ -28,6 +29,13 @@ function wrapOutputTrack(outTrack: MediaStreamTrack, realTrack: MediaStreamTrack
       realTrack.stop()
     } catch {
       // The camera track can already be ended.
+    }
+    try {
+      // Zoom's outgoing track is a generator sitting on the canvas capture.
+      // Stopping the original or any clone releases both.
+      outTrack.stop()
+    } catch {
+      // The output track can already be ended.
     }
   }
 
@@ -194,6 +202,7 @@ export function installCameraHook(state: SnapState, platformId: PlatformId) {
     const real = await origGetUserMedia.call(this, constraints)
     let pipe: Pipeline | null = null
     let swapped = false
+    let outTrack: MediaStreamTrack | null = null
     const videoTracks = real.getVideoTracks()
     try {
       const videoTrack = videoTracks[0]
@@ -202,18 +211,21 @@ export function installCameraHook(state: SnapState, platformId: PlatformId) {
       const video = await openPreview(videoTrack)
       pipe = new Pipeline(video, state)
       pipe.start()
-      const outTrack = pipe.canvas.captureStream(30).getVideoTracks()[0]
-      if (!outTrack) {
+      const canvasTrack = pipe.canvas.captureStream(30).getVideoTracks()[0]
+      if (!canvasTrack) {
         pipe.destroy()
         return real
       }
+      const outgoing = platformId === 'zoom' ? toOpaqueVideoTrack(canvasTrack) : canvasTrack
+      outTrack = outgoing
       // Frames painted before captureStream do not count. Jitsi drops a video
       // track that is still muted when the promise resolves.
       await new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
       pipe.frame()
-      await untilTrackLive(outTrack)
+      await untilTrackLive(outgoing)
 
-      const wrapped = wrapOutputTrack(outTrack, videoTrack, pipe)
+      const wrapped = wrapOutputTrack(outgoing, videoTrack, pipe)
+      outTrack = null
       state.active = pipe
       syncDetector()
       state.refresh()
@@ -222,6 +234,11 @@ export function installCameraHook(state: SnapState, platformId: PlatformId) {
       real.addTrack(wrapped)
       return real
     } catch (error) {
+      try {
+        outTrack?.stop()
+      } catch {
+        // The output track can already be ended.
+      }
       pipe?.destroy()
       if (swapped) {
         for (const track of real.getVideoTracks()) real.removeTrack(track)
