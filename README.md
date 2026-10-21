@@ -1,6 +1,6 @@
 # Meet Thanos
 
-Snap your fingers and vanish from your own video in Google Meet, Jitsi and Yandex Telemost. You stay in the call, your picture dissolves (8 effects to choose from) and leaves an empty room behind, until you snap again.
+Snap your fingers and vanish from your own video in Google Meet, Zoom, Jitsi and Yandex Telemost. You stay in the call, your picture dissolves (8 effects to choose from) and leaves an empty room behind, until you snap again.
 
 Everything runs locally in your browser: no video or audio is ever sent anywhere, and it works offline (aside from the call itself).
 
@@ -15,10 +15,11 @@ The script starts at `document-start` and replaces the camera track before the p
 ## Sites
 
 - Google Meet — `https://meet.google.com/*`
+- Zoom — `https://app.zoom.us/*`, `https://app.zoom.com/*`, `https://home.zoom.us/*`, `https://home.zoom.com/*`, `https://*.zoom.us/wc/*`, `https://*.zoom.com/wc/*`, and the same web-client hosts on `zoomgov.com`
 - Jitsi — `https://meet.jit.si/*`
 - Yandex Telemost — `https://telemost.yandex.ru/*`
 
-Another Jitsi host is one entry in [`src/platforms/registry.ts`](src/platforms/registry.ts). That list is also the userscript `@match`.
+Another host is one entry in [`src/platforms/registry.ts`](src/platforms/registry.ts). That list is also the userscript `@match`. A pattern like `*.zoom.us` matches that domain and any subdomain; the path is still limited by `@match`.
 
 ## How to use it
 
@@ -28,7 +29,7 @@ Another Jitsi host is one entry in [`src/platforms/registry.ts`](src/platforms/r
    - **Background** — most vanish effects need to know what's behind you. Either:
      - **Capture empty room**: press it, step out of frame, and wait for the beep. The countdown is 5 seconds by default (stored with the other settings; there is no slider for it).
      - **Upload background**: if you use a macOS camera background (Control Center → Video Effects → Background), upload the same picture. The camera then already shows you on top of a known image, so the cut-out is clean and you never need to leave the frame. Snap figures out on its own if the picture needs to be mirrored.
-     The background is saved in the userscript manager, so it survives reloads and is the same on Meet, Jitsi and Telemost.
+     The background is saved in the userscript manager, so it survives reloads and is the same on Meet, Zoom, Jitsi and Telemost.
    - **Effect** — pick one of 8. Freeze and Lag skip the empty-room capture: they hold the camera itself, so no background is required.
    - **Duration** — how long the vanish takes. Lag has its own **record** slider for how long to sample after the snap, and **reverse repeat** for ping-pong playback.
 3. Snap your fingers (a normal, sharp snap) to vanish. Snap again to come back. You can snap as many times as you like, and snapping mid-way turns the effect around.
@@ -50,7 +51,7 @@ Turning the camera off and on again keeps the saved room. Everyone in the call s
 | Portal | You spin and shrink into a purple vortex that closes behind you |
 | Hedge | The Homer Simpson ("Homer Loves Flanders", 1994): you step back while two hedges slide in from the left and the right in front of you, swaying. They close with a rustle and a burst of leaves, then part again and you're gone. Coming back is Homer stepping out of the hedge |
 | Freeze | Holds the whole outgoing camera frame on the snap. You can walk out of shot and come back to the same still picture. Snap again to unfreeze. No empty-room capture. |
-| Lag | After the snap, records live camera for the chosen **record** time (0.2–2.0 s, ~15 fps) while the call still sees you live. The Vanish button shows **Recording** and fills with progress. Then that clip loops at the recorded pace: **reverse repeat off** is start → end → start; **on** is ping-pong start → end → start → end, with no jump at the turn. Snap again to go live. No empty-room capture. |
+| Lag | After the snap, records live camera for the chosen **record** time (0.2–5.0 s, ~15 fps) while the call still sees you live. The Vanish button shows **Recording** and fills with progress. Then that clip loops at the recorded pace: **reverse repeat off** is start → end → start; **on** is ping-pong start → end → start → end, with no jump at the turn. Snap again to go live. No empty-room capture. |
 
 ## Troubleshooting
 
@@ -62,7 +63,7 @@ Turning the camera off and on again keeps the saved room. Everyone in the call s
 
 ## Privacy
 
-Everything happens locally, inside your browser: no camera frame and no microphone audio is ever sent anywhere, and the script talks to no server. The microphone is only used to listen for the finger snap itself. The audio is never stored or recorded, and it is released when Snap is switched off or the finger snap trigger is paused. The saved background and the other pill settings stay in the userscript manager on your computer, shared across Meet, Jitsi and Telemost.
+Everything happens locally, inside your browser: no camera frame and no microphone audio is ever sent anywhere, and the script talks to no server. The microphone is only used to listen for the finger snap itself. The audio is never stored or recorded, and it is released when Snap is switched off or the finger snap trigger is paused. The saved background and the other pill settings stay in the userscript manager on your computer, shared across Meet, Zoom, Jitsi and Telemost.
 
 ## Develop
 
