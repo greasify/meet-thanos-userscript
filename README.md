@@ -51,7 +51,7 @@ Turning the camera off and on again keeps the saved room. Everyone in the call s
 | Portal | You spin and shrink into a purple vortex that closes behind you |
 | Hedge | The Homer Simpson ("Homer Loves Flanders", 1994): you step back while two hedges slide in from the left and the right in front of you, swaying. They close with a rustle and a burst of leaves, then part again and you're gone. Coming back is Homer stepping out of the hedge |
 | Freeze | Holds the whole outgoing camera frame on the snap. You can walk out of shot and come back to the same still picture. Snap again to unfreeze. No empty-room capture. |
-| Lag | After the snap, records live camera for the chosen **record** time (0.2–2.0 s, ~15 fps) while the call still sees you live. The Vanish button shows **Recording** and fills with progress. Then that clip loops at the recorded pace: **reverse repeat off** is start → end → start; **on** is ping-pong start → end → start → end, with no jump at the turn. Snap again to go live. No empty-room capture. |
+| Lag | After the snap, records live camera for the chosen **record** time (0.2–5.0 s, ~15 fps) while the call still sees you live. The Vanish button shows **Recording** and fills with progress. Then that clip loops at the recorded pace: **reverse repeat off** is start → end → start; **on** is ping-pong start → end → start → end, with no jump at the turn. Snap again to go live. No empty-room capture. |
 
 ## Troubleshooting
 

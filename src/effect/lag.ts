@@ -1,7 +1,7 @@
 /* eslint-disable antfu/top-level-function */
 
 export const LAG_FPS = 15
-export const LAG_MAX_MS = 2000
+export const LAG_MAX_MS = 5000
 export const LAG_MIN_MS = 200
 
 const FRAME_MS = 1000 / LAG_FPS
