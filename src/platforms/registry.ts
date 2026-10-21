@@ -20,6 +20,8 @@ export const platforms = [
   },
   {
     id: 'zoom',
+    /** Workplace is a shell. The camera exists only in the meeting iframe. */
+    frame: 'child',
     matches: [
       'https://app.zoom.us/*',
       'https://app.zoom.com/*',
@@ -59,4 +61,10 @@ export function detectPlatform(href: string) {
   const hostname = new URL(href).hostname
   return platforms.find(platform => platform.matches.some(pattern => hostMatches(hostOf(pattern), hostname)),
   ) ?? null
+}
+
+/** A `child` platform starts only inside the meeting iframe, never on the top page. */
+export function shouldStart(platform: (typeof platforms)[number]) {
+  if (!('frame' in platform) || platform.frame !== 'child') return true
+  return window.top !== window
 }

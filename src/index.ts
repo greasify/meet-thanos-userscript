@@ -1,12 +1,12 @@
 import { installCameraHook } from './media/hook'
-import { detectPlatform } from './platforms/registry'
+import { detectPlatform, shouldStart } from './platforms/registry'
 import { readBg } from './snap/settings'
 import { createState, rememberBg } from './state'
 import { mountPanel } from './ui/panel'
 
 const platform = detectPlatform(location.href)
 
-if (platform) {
+if (platform && shouldStart(platform)) {
   const state = createState()
   const { toggle } = installCameraHook(state, platform.id)
   void readBg().then((saved) => {
